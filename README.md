@@ -158,4 +158,4 @@ Testnet prototype built for a hackathon: no real value, not audited, not product
 
 ---
 
-License: open source — license file to accompany the submission.
+License: [Apache-2.0](LICENSE)
