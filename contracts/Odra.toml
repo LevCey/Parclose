@@ -3,3 +3,9 @@ fqn = "fund_token::FundToken"
 
 [[contracts]]
 fqn = "cash_token::CashToken"
+
+[[contracts]]
+fqn = "window_registry::WindowRegistry"
+
+[[contracts]]
+fqn = "sealed_order_book::SealedOrderBook"
