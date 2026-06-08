@@ -9,3 +9,6 @@ fqn = "window_registry::WindowRegistry"
 
 [[contracts]]
 fqn = "sealed_order_book::SealedOrderBook"
+
+[[contracts]]
+fqn = "crossing_engine::CrossingEngine"
