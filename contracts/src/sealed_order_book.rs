@@ -19,7 +19,7 @@ pub struct OrderSubmitted {
 
 /// Domain-separation tag for the per-window order commitment. Bumping the version
 /// invalidates cross-version reuse of a commitment preimage.
-const COMMITMENT_DOMAIN: &[u8] = b"APERTURE_ORDER_COMMITMENT_V1";
+const COMMITMENT_DOMAIN: &[u8] = b"PARCLOSE_ORDER_COMMITMENT_V1";
 
 /// Sealed-order intake for a crossing window.
 ///

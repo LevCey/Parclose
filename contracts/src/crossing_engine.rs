@@ -1,4 +1,4 @@
-use aperture_shared::{Attestation, AttestationClaim, ClearingResult};
+use parclose_shared::{Attestation, AttestationClaim, ClearingResult};
 use odra::casper_types::bytesrepr::{Bytes, ToBytes};
 use odra::casper_types::{PublicKey, U256};
 use odra::prelude::*;
@@ -360,7 +360,7 @@ mod tests {
     use crate::fund_token::{FundToken, FundTokenHostRef, FundTokenInitArgs};
     use crate::sealed_order_book::{SealedOrderBook, SealedOrderBookHostRef, SealedOrderBookInitArgs};
     use crate::window_registry::{WindowRegistry, WindowRegistryHostRef, WindowRegistryInitArgs};
-    use aperture_shared::{Attestation, AttestationClaim, ClearingResult, Settlement};
+    use parclose_shared::{Attestation, AttestationClaim, ClearingResult, Settlement};
     use odra::casper_types::bytesrepr::{Bytes, ToBytes};
     use odra::casper_types::{crypto, PublicKey, SecretKey, U256};
     use odra::host::{Deployer, HostEnv};
@@ -411,7 +411,7 @@ mod tests {
         let mut fund = FundToken::deploy(
             &env,
             FundTokenInitArgs {
-                name: "Aperture Fund".to_string(),
+                name: "Parclose Fund".to_string(),
                 symbol: "APF".to_string(),
                 decimals: 9,
                 initial_supply: U256::from(1_000_000u64),
@@ -420,7 +420,7 @@ mod tests {
         let mut cash = CashToken::deploy(
             &env,
             CashTokenInitArgs {
-                name: "Aperture Cash".to_string(),
+                name: "Parclose Cash".to_string(),
                 symbol: "APC".to_string(),
                 decimals: 9,
                 initial_supply: U256::from(1_000_000u64),

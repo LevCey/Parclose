@@ -48,7 +48,7 @@ mod tests {
         let mut token = CashToken::deploy(
             &env,
             CashTokenInitArgs {
-                name: "Aperture Cash".to_string(),
+                name: "Parclose Cash".to_string(),
                 symbol: "APC".to_string(),
                 decimals: 9,
                 initial_supply: U256::from(1_000_000u64),

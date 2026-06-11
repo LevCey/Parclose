@@ -1,8 +1,8 @@
-# Aperture
+# Parclose
 
 **Private, fair redemption matching for tokenized real-world-asset (RWA) funds — coordinated by autonomous liquidity agents and settled on Casper.**
 
-Aperture runs a confidential **crossing window**: investors and autonomous agents submit sealed orders, a confidential-compute enclave computes one fair clearing price without revealing anyone's order, and a Casper smart contract verifies that result and settles it on-chain. Built for the **Casper Agentic Buildathon 2026** (Innovation Track).
+Parclose runs a confidential **crossing window**: investors and autonomous agents submit sealed orders, a confidential-compute enclave computes one fair clearing price without revealing anyone's order, and a Casper smart contract verifies that result and settles it on-chain. Built for the **Casper Agentic Buildathon 2026** (Innovation Track).
 
 > Status: active development · Casper **Testnet** prototype · custodies no real value. See [Status](#status).
 
@@ -22,7 +22,7 @@ Semi-liquid tokenized RWA funds — private credit, real-estate income, revenue-
 
 ---
 
-## What Aperture does
+## What Parclose does
 
 A periodic confidential crossing window with four moving parts:
 
@@ -37,7 +37,7 @@ The result is confidential price discovery, fair sealed competition, and a settl
 
 ## The agents are the protagonists
 
-Aperture's liquidity agents are genuine autonomous agents, not a pricing formula with agent branding. Each runs a real **perceive → reason → act** loop:
+Parclose's liquidity agents are genuine autonomous agents, not a pricing formula with agent branding. Each runs a real **perceive → reason → act** loop:
 
 - **Perceive** — read fund state, prior clearing prices, attested market/NAV inputs, and the agent's own inventory and risk limits.
 - **Reason** — an LLM strategy layer forms a view under uncertainty and competition, weighing the attested signal, its inventory and risk limits, fill probability against rivals, and prior clearing context. It produces a short, human-readable rationale and a concrete order.
@@ -94,7 +94,7 @@ At least two agents run independently, with different strategies, blind to one a
 
 ## Why Casper
 
-Aperture uses Casper as a coherent, auditor-legible home for confidential, regulated settlement — **not** a claim that this is impossible elsewhere; the confidential-compute layer is portable. What Casper provides here:
+Parclose uses Casper as a coherent, auditor-legible home for confidential, regulated settlement — **not** a claim that this is impossible elsewhere; the confidential-compute layer is portable. What Casper provides here:
 
 - a live, on-chain-verifiable attestation pattern to build the verification step against;
 - compliant, transfer-restricted settlement aligned with regulated-RWA use;
@@ -116,7 +116,7 @@ shared/      canonical encodings shared across the above
 
 ## Status
 
-Aperture is in **active development** for the Casper Agentic Buildathon 2026 (Qualification Round, June 2026). It is a Casper **Testnet** prototype: not production software, not audited, and it custodies no real value — both settlement legs are test tokens.
+Parclose is in **active development** for the Casper Agentic Buildathon 2026 (Qualification Round, June 2026). It is a Casper **Testnet** prototype: not production software, not audited, and it custodies no real value — both settlement legs are test tokens.
 
 - [ ] Smart contracts on Casper Testnet
 - [ ] Confidential clearing enclave (plus a labeled testnet/dev attestation signer for development)

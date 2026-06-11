@@ -1,6 +1,6 @@
 #![no_std]
 
-//! Canonical cross-component encodings for Aperture.
+//! Canonical cross-component encodings for Parclose.
 //!
 //! These types are the single source of truth shared by the contracts, the enclave (or its
 //! mock-signer stub), and the agents. Two encodings must never diverge across components, or

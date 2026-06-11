@@ -99,7 +99,7 @@ mod tests {
 
     fn args() -> FundTokenInitArgs {
         FundTokenInitArgs {
-            name: "Aperture Fund".to_string(),
+            name: "Parclose Fund".to_string(),
             symbol: "APF".to_string(),
             decimals: 9,
             initial_supply: U256::from(1_000_000u64),

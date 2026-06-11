@@ -1,8 +1,8 @@
 [package]
-name = "aperture-shared"
+name = "parclose-shared"
 version = "0.1.0"
 edition = "2021"
-description = "Canonical cross-component encodings for Aperture: sealed order, attestation claim, settlement."
+description = "Canonical cross-component encodings for Parclose: sealed order, attestation claim, settlement."
 
 [dependencies]
 odra = { version = "2.2.0", features = [], default-features = false }
