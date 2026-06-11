@@ -40,6 +40,11 @@ pub struct Order {
     pub limit: u64,
     /// The window this order is bound to.
     pub window_id: u64,
+    /// The submitting account. The enclave rejects any order whose `account` does not equal the
+    /// on-chain submitter recorded by `SealedOrderBook` for this order's index — and since the
+    /// submitter is folded into the order commitment (hence into `input_hash`), that check is
+    /// rooted on-chain, not in an operator's declaration.
+    pub account: Address,
 }
 
 /// The domain-separated attestation claim (R5.3). The enclave signs `claim.to_bytes()`; the

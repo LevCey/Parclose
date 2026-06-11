@@ -1,4 +1,4 @@
-use odra::casper_types::bytesrepr::Bytes;
+use odra::casper_types::bytesrepr::{Bytes, ToBytes};
 use odra::prelude::*;
 use crate::window_registry::WindowRegistryContractRef;
 
@@ -6,6 +6,8 @@ use crate::window_registry::WindowRegistryContractRef;
 pub enum Error {
     /// The target window is not open; submissions are rejected.
     WindowNotOpen = 0,
+    /// Canonical encoding of a commitment field failed.
+    Encoding = 1,
 }
 
 /// Emitted for each accepted sealed order so the dashboard can show ciphertext arriving.
@@ -13,6 +15,8 @@ pub enum Error {
 pub struct OrderSubmitted {
     pub window_id: u64,
     pub order_idx: u64,
+    /// The on-chain submitter (caller) of this order.
+    pub submitter: Address,
     /// The 32-byte hash of the submitted ciphertext (not the plaintext).
     pub ciphertext_hash: Bytes,
 }
@@ -32,16 +36,26 @@ const COMMITMENT_DOMAIN: &[u8] = b"PARCLOSE_ORDER_COMMITMENT_V1";
 /// ```text
 /// commitment_0   = 0^32
 /// commitment_{n} = H( COMMITMENT_DOMAIN || window_id_be8 || n_be8
-///                     || commitment_{n-1} || ciphertext_hash_n )
+///                     || submitter_bytes || commitment_{n-1} || ciphertext_hash_n )
 /// ```
 ///
-/// where `n` is the **zero-based index** of the order being added. The chain binds order,
-/// position, count, and window: reordering, dropping, duplicating, or moving an order to a
-/// different window all change the final commitment. (A plain XOR/sum would let duplicate
-/// hashes cancel and would not bind order — hence the chain.)
+/// where `n` is the **zero-based index** of the order being added and `submitter_bytes` is the
+/// casper `bytesrepr` encoding of the order's on-chain submitter. The chain binds order,
+/// position, count, window, **and submitter**: reordering, dropping, duplicating, moving an order
+/// to a different window, or resubmitting it from a different account all change the final
+/// commitment. (A plain XOR/sum would let duplicate hashes cancel and would not bind order — hence
+/// the chain.)
 ///
-/// The enclave reads the stored ciphertexts for the window, recomputes the identical chain to
-/// produce its attestation `input_hash`, and `CrossingEngine` checks
+/// **Submitter binding.** The caller of `submit_sealed_order` is recorded per order and folded
+/// into the preimage above, so the cleared set is bound not just to the ciphertexts but to *who*
+/// submitted each. The order plaintext carries the submitter's `account`; the enclave rejects any
+/// order whose `account` does not equal the recorded submitter for its index. Because the
+/// submitter is in the commitment (hence in `input_hash`, which `CrossingEngine` verifies), this
+/// binding is rooted on-chain — a copied ciphertext resubmitted from another account does not
+/// reproduce the window's commitment and is rejected.
+///
+/// The enclave reads the stored ciphertexts and submitters for the window, recomputes the
+/// identical chain to produce its attestation `input_hash`, and `CrossingEngine` checks
 /// `get_commitment(window_id) == attestation.input_hash` at settle time. The big-endian,
 /// fixed-width field encoding above is the canonical encoding the enclave must mirror exactly.
 ///
@@ -59,7 +73,9 @@ pub struct SealedOrderBook {
     ciphertexts: Mapping<(u64, u64), Bytes>,
     // (window_id, order_idx) → blake2b-256(ciphertext), derived on submit (32 bytes)
     cipher_hashes: Mapping<(u64, u64), Bytes>,
-    // window_id → running commitment hash chain over accepted ciphertext_hashes
+    // (window_id, order_idx) → on-chain submitter (caller) of the order
+    submitters: Mapping<(u64, u64), Address>,
+    // window_id → running commitment hash chain over accepted (submitter, ciphertext_hash)
     commitments: Mapping<u64, Bytes>,
 }
 
@@ -78,12 +94,14 @@ impl SealedOrderBook {
             self.env().revert(Error::WindowNotOpen);
         }
 
+        let submitter = self.env().caller();
         // Derive the hash from the actual ciphertext bytes; never trust a caller-supplied value.
         let ciphertext_hash = Bytes::from(self.env().hash(ciphertext.inner_bytes()).to_vec());
 
         let idx = self.order_count.get(&window_id).unwrap_or(0);
         self.ciphertexts.set(&(window_id, idx), ciphertext);
         self.cipher_hashes.set(&(window_id, idx), ciphertext_hash.clone());
+        self.submitters.set(&(window_id, idx), submitter);
         self.order_count.set(&window_id, idx + 1);
 
         // Extend the per-window commitment hash chain with this order.
@@ -91,12 +109,13 @@ impl SealedOrderBook {
             .commitments
             .get(&window_id)
             .unwrap_or_else(zero_commitment);
-        let next = self.extend_commitment(window_id, idx, &prev, &ciphertext_hash);
+        let next = self.extend_commitment(window_id, idx, &submitter, &prev, &ciphertext_hash);
         self.commitments.set(&window_id, next);
 
         self.env().emit_event(OrderSubmitted {
             window_id,
             order_idx: idx,
+            submitter,
             ciphertext_hash,
         });
     }
@@ -122,6 +141,12 @@ impl SealedOrderBook {
     pub fn get_order_hash(&self, window_id: u64, order_idx: u64) -> Option<Bytes> {
         self.cipher_hashes.get(&(window_id, order_idx))
     }
+
+    /// Returns the on-chain submitter recorded for a given order index. The enclave checks the
+    /// decrypted order's `account` against this value.
+    pub fn get_order_submitter(&self, window_id: u64, order_idx: u64) -> Option<Address> {
+        self.submitters.get(&(window_id, order_idx))
+    }
 }
 
 impl SealedOrderBook {
@@ -131,14 +156,20 @@ impl SealedOrderBook {
         &self,
         window_id: u64,
         idx: u64,
+        submitter: &Address,
         prev: &Bytes,
         ciphertext_hash: &Bytes,
     ) -> Bytes {
-        let mut preimage =
-            Vec::with_capacity(COMMITMENT_DOMAIN.len() + 8 + 8 + 32 + 32);
+        let submitter_bytes = submitter
+            .to_bytes()
+            .unwrap_or_else(|_| self.env().revert(Error::Encoding));
+        let mut preimage = Vec::with_capacity(
+            COMMITMENT_DOMAIN.len() + 8 + 8 + submitter_bytes.len() + 32 + 32,
+        );
         preimage.extend_from_slice(COMMITMENT_DOMAIN);
         preimage.extend_from_slice(&window_id.to_be_bytes());
         preimage.extend_from_slice(&idx.to_be_bytes());
+        preimage.extend_from_slice(&submitter_bytes);
         preimage.extend_from_slice(prev.inner_bytes());
         preimage.extend_from_slice(ciphertext_hash.inner_bytes());
         Bytes::from(self.env().hash(&preimage).to_vec())
@@ -303,5 +334,31 @@ mod tests {
 
         assert_ne!(w1, w2);
         assert_ne!(c1, c2);
+    }
+
+    /// The submitter is recorded per order and bound into the commitment: the same ciphertext
+    /// submitted from a different account yields a different commitment, so a copied ciphertext
+    /// resubmitted from another account cannot reproduce the window's `input_hash`.
+    #[test]
+    fn submitter_recorded_and_bound_in_commitment() {
+        let env = odra_test::env();
+        let alice = env.get_account(1);
+        let bob = env.get_account(2);
+
+        let (mut reg_a, mut book_a) = setup(&env);
+        let wa = reg_a.open_window();
+        env.set_caller(alice);
+        book_a.submit_sealed_order(wa, bytes(b"order-X"));
+
+        let (mut reg_b, mut book_b) = setup(&env);
+        let wb = reg_b.open_window();
+        env.set_caller(bob);
+        book_b.submit_sealed_order(wb, bytes(b"order-X"));
+
+        assert_eq!(book_a.get_order_submitter(wa, 0), Some(alice));
+        assert_eq!(book_b.get_order_submitter(wb, 0), Some(bob));
+        // Same window id + same ciphertext, different submitter -> different commitment.
+        assert_eq!(wa, wb);
+        assert_ne!(book_a.get_commitment(wa), book_b.get_commitment(wb));
     }
 }
