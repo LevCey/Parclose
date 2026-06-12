@@ -6,7 +6,7 @@ use odra::prelude::*;
 use crate::cash_token::CashTokenContractRef;
 use crate::fund_token::FundTokenContractRef;
 use crate::sealed_order_book::SealedOrderBookContractRef;
-use crate::window_registry::WindowRegistryContractRef;
+use crate::window_registry::{WindowInfo, WindowRegistryContractRef};
 
 #[odra::odra_error]
 pub enum Error {
@@ -50,6 +50,10 @@ pub enum Error {
     NothingToWithdraw = 18,
     /// Canonical encoding failed.
     Encoding = 19,
+    /// The window has been expired (liveness escape); it can no longer be settled.
+    WindowExpired = 20,
+    /// The window's settlement deadline has not yet passed.
+    DeadlineNotReached = 21,
 }
 
 #[odra::event]
@@ -74,6 +78,11 @@ pub struct Withdrawn {
     pub cash_amount: U256,
 }
 
+#[odra::event]
+pub struct WindowExpired {
+    pub window_id: u64,
+}
+
 /// CrossingEngine — verifies the enclave attestation and atomically settles a crossing from
 /// pre-funded escrow.
 ///
@@ -90,7 +99,7 @@ pub struct Withdrawn {
 /// `withdraw`, pull-based, after the window is settled.
 #[odra::module(
     errors = Error,
-    events = [EscrowDeposited, Settled, Withdrawn]
+    events = [EscrowDeposited, Settled, Withdrawn, WindowExpired]
 )]
 pub struct CrossingEngine {
     registry: External<WindowRegistryContractRef>,
@@ -102,6 +111,9 @@ pub struct CrossingEngine {
     expected_measurement: Var<Bytes>,
     network: Var<String>,
     freshness_window: Var<u64>,
+    // How long after a window closes it may still be settled, in milliseconds. After this, anyone
+    // may expire the window (liveness escape, I-7).
+    settlement_deadline: Var<u64>,
     // Escrow ledger: committed maximum each account has deposited.
     escrow_fund: Mapping<Address, U256>,
     escrow_cash: Mapping<Address, U256>,
@@ -111,6 +123,8 @@ pub struct CrossingEngine {
     // Replay guards.
     consumed_window: Mapping<u64, bool>,
     used_nonce: Mapping<u64, bool>,
+    // Windows expired via the liveness escape; mutually exclusive with consumed_window.
+    expired_window: Mapping<u64, bool>,
 }
 
 #[odra::module]
@@ -127,6 +141,7 @@ impl CrossingEngine {
         expected_measurement: Bytes,
         network: String,
         freshness_window: u64,
+        settlement_deadline: u64,
     ) {
         self.registry.set(registry);
         self.order_book.set(order_book);
@@ -136,6 +151,7 @@ impl CrossingEngine {
         self.expected_measurement.set(expected_measurement);
         self.network.set(network);
         self.freshness_window.set(freshness_window);
+        self.settlement_deadline.set(settlement_deadline);
     }
 
     /// Escrows fund tokens (the redeemer's leg). Requires the current window open and the caller
@@ -220,11 +236,46 @@ impl CrossingEngine {
         });
     }
 
+    /// Liveness escape (I-7), permissionless: once a window has been closed for longer than the
+    /// configured `settlement_deadline` without being settled, anyone may expire it. An expired
+    /// window can no longer be settled, and its participants' escrow becomes withdrawable.
+    /// `settle` and `expire_window` are mutually exclusive on the same window (a settled window
+    /// cannot be expired, and an expired window cannot be settled), so escrow is never both paid
+    /// out and refunded.
+    pub fn expire_window(&mut self, window_id: u64) {
+        if !self.registry.is_closed(window_id) {
+            self.env().revert(Error::WindowNotClosed);
+        }
+        if self.consumed_window.get(&window_id).unwrap_or(false) {
+            self.env().revert(Error::WindowConsumed);
+        }
+        if self.expired_window.get(&window_id).unwrap_or(false) {
+            self.env().revert(Error::WindowExpired);
+        }
+        let info: WindowInfo = self
+            .registry
+            .get_window(window_id)
+            .unwrap_or_else(|| self.env().revert(Error::WindowNotClosed));
+        let deadline_at = info
+            .closed_at
+            .checked_add(self.settlement_deadline.get().unwrap_or_default())
+            .unwrap_or_else(|| self.env().revert(Error::Overflow));
+        if self.env().get_block_time() < deadline_at {
+            self.env().revert(Error::DeadlineNotReached);
+        }
+        self.expired_window.set(&window_id, true);
+        self.env().emit_event(WindowExpired { window_id });
+    }
+
     /// Withdraws settled credit plus any unmatched escrow. Blocked while the current window is
-    /// open or closed-but-unsettled (so escrow cannot be pulled out from under a pending clearing).
+    /// open or closed-but-unresolved; allowed once the current window is settled or expired (so
+    /// escrow cannot be pulled out from under a pending clearing, but is always recoverable after).
     pub fn withdraw(&mut self) {
         let wid = self.registry.current_window_id();
-        if wid != 0 && !self.consumed_window.get(&wid).unwrap_or(false) {
+        if wid != 0
+            && !self.consumed_window.get(&wid).unwrap_or(false)
+            && !self.expired_window.get(&wid).unwrap_or(false)
+        {
             self.env().revert(Error::WithdrawLocked);
         }
         let caller = self.env().caller();
@@ -275,6 +326,9 @@ impl CrossingEngine {
     pub fn is_window_consumed(&self, window_id: u64) -> bool {
         self.consumed_window.get(&window_id).unwrap_or(false)
     }
+    pub fn is_window_expired(&self, window_id: u64) -> bool {
+        self.expired_window.get(&window_id).unwrap_or(false)
+    }
 }
 
 impl CrossingEngine {
@@ -316,6 +370,9 @@ impl CrossingEngine {
         }
         if self.consumed_window.get(&claim.window_id).unwrap_or(false) {
             self.env().revert(Error::WindowConsumed);
+        }
+        if self.expired_window.get(&claim.window_id).unwrap_or(false) {
+            self.env().revert(Error::WindowExpired);
         }
         if claim.rule_version != self.registry.rule_version() {
             self.env().revert(Error::RuleVersionMismatch);
@@ -373,6 +430,7 @@ mod tests {
     const QTY: u64 = 500;
     const PRICE: u64 = 100;
     const CASH: u64 = QTY * PRICE; // 50_000
+    const DEADLINE_MS: u64 = 1_000; // settlement deadline for the liveness escape
 
     fn measurement() -> Bytes {
         Bytes::from(vec![0xCDu8; 32])
@@ -441,6 +499,7 @@ mod tests {
                 expected_measurement: measurement(),
                 network: NETWORK.to_string(),
                 freshness_window: u64::MAX,
+                settlement_deadline: DEADLINE_MS,
             },
         );
 
@@ -685,5 +744,85 @@ mod tests {
         let attestation2 = sign_claim(&s.sk, &s.pk, claim2);
         let result = clearing_result(s.wid, s.redeemer, s.subscriber);
         assert_eq!(s.engine.try_settle(result, attestation2), Err(Error::WindowConsumed.into()));
+    }
+
+    // --- liveness escape (I-7, D-14): a closed-but-never-settled window can always be expired
+    // after the deadline, refunding escrow; settle and expire are mutually exclusive. ---
+
+    #[test]
+    fn expire_after_deadline_unlocks_escrow() {
+        let mut s = setup();
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        s.env.advance_block_time(DEADLINE_MS + 1);
+
+        // Permissionless.
+        s.env.set_caller(s.env.get_account(3));
+        s.engine.expire_window(s.wid);
+        assert!(s.engine.is_window_expired(s.wid));
+        assert!(!s.engine.is_window_consumed(s.wid));
+
+        // Both participants recover their full escrow (nothing was settled).
+        s.env.set_caller(s.redeemer);
+        s.engine.withdraw();
+        s.env.set_caller(s.subscriber);
+        s.engine.withdraw();
+        assert_eq!(s.fund.balance_of(&s.redeemer), U256::from(1_000u64));
+        assert_eq!(s.cash.balance_of(&s.subscriber), U256::from(100_000u64));
+    }
+
+    #[test]
+    fn expire_before_deadline_reverts() {
+        let mut s = setup();
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        // No time advanced: the deadline has not passed.
+        assert_eq!(s.engine.try_expire_window(s.wid), Err(Error::DeadlineNotReached.into()));
+    }
+
+    #[test]
+    fn expire_open_window_reverts() {
+        let mut s = setup();
+        // The window is still open.
+        assert_eq!(s.engine.try_expire_window(s.wid), Err(Error::WindowNotClosed.into()));
+    }
+
+    #[test]
+    fn settle_after_expire_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        s.env.advance_block_time(DEADLINE_MS + 1);
+        s.engine.expire_window(s.wid);
+
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), s.wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        let result = clearing_result(s.wid, s.redeemer, s.subscriber);
+        assert_eq!(s.engine.try_settle(result, attestation), Err(Error::WindowExpired.into()));
+    }
+
+    #[test]
+    fn expire_after_settle_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), s.wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        s.engine
+            .settle(clearing_result(s.wid, s.redeemer, s.subscriber), attestation);
+
+        // The window is settled; it can never be expired (escrow is never both paid and refunded).
+        s.env.advance_block_time(DEADLINE_MS + 1);
+        assert_eq!(s.engine.try_expire_window(s.wid), Err(Error::WindowConsumed.into()));
+    }
+
+    #[test]
+    fn expire_twice_reverts() {
+        let mut s = setup();
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        s.env.advance_block_time(DEADLINE_MS + 1);
+        s.engine.expire_window(s.wid);
+        assert_eq!(s.engine.try_expire_window(s.wid), Err(Error::WindowExpired.into()));
     }
 }
