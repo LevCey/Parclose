@@ -195,7 +195,11 @@ impl CrossingEngine {
             self.env().revert(Error::OutputHashMismatch);
         }
 
-        // Pass 1 — validate: every fill is covered by escrow, and value is conserved.
+        // Move escrow into withdrawable credit in a single pass. Each fill is checked against the
+        // *running* escrow (decremented as we go), so two fills for the same account that
+        // cumulatively exceed its escrow are caught with a named InsufficientEscrow rather than a
+        // U256 underflow panic. A revert discards all writes, so settlement stays all-or-nothing.
+        // The closing conservation check rejects any result that mints or burns value.
         let mut debit_fund = U256::zero();
         let mut debit_cash = U256::zero();
         let mut credit_fund = U256::zero();
@@ -206,6 +210,12 @@ impl CrossingEngine {
             if ef < f.fund_spent || ec < f.cash_spent {
                 self.env().revert(Error::InsufficientEscrow);
             }
+            self.escrow_fund.set(&f.account, ef - f.fund_spent);
+            self.escrow_cash.set(&f.account, ec - f.cash_spent);
+            let cf = self.credit_fund.get(&f.account).unwrap_or_default();
+            let cc = self.credit_cash.get(&f.account).unwrap_or_default();
+            self.credit_fund.set(&f.account, cf + f.fund_credit);
+            self.credit_cash.set(&f.account, cc + f.cash_credit);
             debit_fund += f.fund_spent;
             debit_cash += f.cash_spent;
             credit_fund += f.fund_credit;
@@ -213,18 +223,6 @@ impl CrossingEngine {
         }
         if debit_fund != credit_fund || debit_cash != credit_cash {
             self.env().revert(Error::ConservationViolated);
-        }
-
-        // Pass 2 — apply: move escrow into withdrawable credit. Internal only; cannot fail.
-        for f in result.fills.iter() {
-            let ef = self.escrow_fund.get(&f.account).unwrap_or_default();
-            let ec = self.escrow_cash.get(&f.account).unwrap_or_default();
-            self.escrow_fund.set(&f.account, ef - f.fund_spent);
-            self.escrow_cash.set(&f.account, ec - f.cash_spent);
-            let cf = self.credit_fund.get(&f.account).unwrap_or_default();
-            let cc = self.credit_cash.get(&f.account).unwrap_or_default();
-            self.credit_fund.set(&f.account, cf + f.fund_credit);
-            self.credit_cash.set(&f.account, cc + f.cash_credit);
         }
 
         self.consumed_window.set(&claim.window_id, true);
@@ -431,6 +429,7 @@ mod tests {
     const PRICE: u64 = 100;
     const CASH: u64 = QTY * PRICE; // 50_000
     const DEADLINE_MS: u64 = 1_000; // settlement deadline for the liveness escape
+    const FRESHNESS_MS: u64 = 3_600_000; // attestation freshness window (1 hour, ms)
 
     fn measurement() -> Bytes {
         Bytes::from(vec![0xCDu8; 32])
@@ -498,7 +497,7 @@ mod tests {
                 enclave_pubkey: pk.clone(),
                 expected_measurement: measurement(),
                 network: NETWORK.to_string(),
-                freshness_window: u64::MAX,
+                freshness_window: FRESHNESS_MS,
                 settlement_deadline: DEADLINE_MS,
             },
         );
@@ -897,5 +896,154 @@ mod tests {
 
         assert_ne!(s.wid, w2);
         assert_ne!(c1, c2);
+    }
+
+    // --- remaining verify/binding + accounting tests (W1.6.2 completion) ---
+
+    #[test]
+    fn stale_attestation_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        // Advance well past the freshness window; the claim's timestamp (0) is now stale.
+        s.env.advance_block_time(FRESHNESS_MS + 1);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), s.wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        let result = clearing_result(s.wid, s.redeemer, s.subscriber);
+        assert_eq!(s.engine.try_settle(result, attestation), Err(Error::StaleAttestation.into()));
+    }
+
+    #[test]
+    fn wrong_rule_version_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        let mut claim = base_claim(s.engine.address(), s.wid, 999, input_hash, output_hash, 1);
+        claim.rule_version = 999; // not the registry's current version
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        let result = clearing_result(s.wid, s.redeemer, s.subscriber);
+        assert_eq!(s.engine.try_settle(result, attestation), Err(Error::RuleVersionMismatch.into()));
+    }
+
+    #[test]
+    fn wrong_crossing_engine_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        let rule_version = s.registry.rule_version();
+        // Bind the claim to a different engine address.
+        let other = s.env.get_account(7);
+        let claim = base_claim(other, s.wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        let result = clearing_result(s.wid, s.redeemer, s.subscriber);
+        assert_eq!(s.engine.try_settle(result, attestation), Err(Error::DomainMismatch.into()));
+    }
+
+    #[test]
+    fn nonce_reuse_across_windows_reverts() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        let rule_version = s.registry.rule_version();
+        let claim1 = base_claim(s.engine.address(), s.wid, rule_version, input_hash, output_hash, 1);
+        let att1 = sign_claim(&s.sk, &s.pk, claim1);
+        s.engine
+            .settle(clearing_result(s.wid, s.redeemer, s.subscriber), att1);
+
+        // Open and close a second (empty) window, then try to settle it reusing nonce 1.
+        s.env.set_caller(s.env.get_account(0));
+        let w2 = s.registry.open_window();
+        s.registry.close_window(w2);
+        let empty = || ClearingResult { window_id: w2, price: 0, fills: vec![] };
+        let oh2 = s.engine.compute_output_hash(empty());
+        let ih2 = s.book.get_commitment(w2);
+        let claim2 = base_claim(s.engine.address(), w2, rule_version, ih2, oh2, 1); // nonce 1 reused
+        let att2 = sign_claim(&s.sk, &s.pk, claim2);
+        assert_eq!(s.engine.try_settle(empty(), att2), Err(Error::NonceUsed.into()));
+    }
+
+    #[test]
+    fn partial_fill_refunds_unmatched_escrow() {
+        let mut s = setup();
+        let (red, sub, wid) = (s.redeemer, s.subscriber, s.wid);
+        let part_qty = 300u64;
+        let part_cash = part_qty * PRICE; // 30_000
+        // Only 300 of the redeemer's 500 fund escrow and 30_000 of the subscriber's 50_000 cash
+        // escrow are matched; the remainders stay refundable.
+        let make = || ClearingResult {
+            window_id: wid,
+            price: PRICE,
+            fills: vec![
+                Settlement {
+                    account: red,
+                    fund_spent: U256::from(part_qty),
+                    cash_spent: U256::zero(),
+                    fund_credit: U256::zero(),
+                    cash_credit: U256::from(part_cash),
+                },
+                Settlement {
+                    account: sub,
+                    fund_spent: U256::zero(),
+                    cash_spent: U256::from(part_cash),
+                    fund_credit: U256::from(part_qty),
+                    cash_credit: U256::zero(),
+                },
+            ],
+        };
+
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(wid);
+        let output_hash = s.engine.compute_output_hash(make());
+        let input_hash = s.book.get_commitment(wid);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        s.engine.settle(make(), attestation);
+
+        s.env.set_caller(red);
+        s.engine.withdraw();
+        s.env.set_caller(sub);
+        s.engine.withdraw();
+
+        // Redeemer: 1000 - 500 escrowed + 200 unmatched refund = 700 fund; 30_000 cash proceeds.
+        assert_eq!(s.fund.balance_of(&red), U256::from(700u64));
+        assert_eq!(s.cash.balance_of(&red), U256::from(part_cash));
+        // Subscriber: 300 fund proceeds; 100_000 - 50_000 + 20_000 unmatched refund = 70_000 cash.
+        assert_eq!(s.fund.balance_of(&sub), U256::from(part_qty));
+        assert_eq!(s.cash.balance_of(&sub), U256::from(70_000u64));
+    }
+
+    #[test]
+    fn duplicate_account_fill_reverts() {
+        let mut s = setup();
+        let (red, wid) = (s.redeemer, s.wid);
+        // Two fills for the redeemer spending 300 + 300 = 600 fund > 500 escrowed: the second
+        // fill must revert with a named InsufficientEscrow, not a U256 underflow panic.
+        let make = || ClearingResult {
+            window_id: wid,
+            price: PRICE,
+            fills: vec![
+                Settlement {
+                    account: red,
+                    fund_spent: U256::from(300u64),
+                    cash_spent: U256::zero(),
+                    fund_credit: U256::zero(),
+                    cash_credit: U256::from(30_000u64),
+                },
+                Settlement {
+                    account: red,
+                    fund_spent: U256::from(300u64),
+                    cash_spent: U256::zero(),
+                    fund_credit: U256::zero(),
+                    cash_credit: U256::from(30_000u64),
+                },
+            ],
+        };
+
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(wid);
+        let output_hash = s.engine.compute_output_hash(make());
+        let input_hash = s.book.get_commitment(wid);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        assert_eq!(s.engine.try_settle(make(), attestation), Err(Error::InsufficientEscrow.into()));
     }
 }

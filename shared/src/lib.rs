@@ -70,7 +70,9 @@ pub struct AttestationClaim {
     pub secrets_hash: Bytes,
     /// Commitment to the settlement instructions: `blake2b-256(ClearingResult.to_bytes())`.
     pub output_hash: Bytes,
-    /// Enclave clock at signing; must be within the configured freshness window.
+    /// Enclave clock at signing, in **milliseconds since the Unix epoch** (the unit of Casper's
+    /// block time, which `CrossingEngine` compares it against). Must be within the configured
+    /// freshness window.
     pub timestamp: u64,
     /// Single-use replay guard; rejected if already consumed.
     pub nonce: u64,
