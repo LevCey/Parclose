@@ -317,24 +317,9 @@ mod tests {
         assert_eq!(book_a.get_commitment(wa), book_b.get_commitment(wb));
     }
 
-    /// The same first order under different window ids yields different commitments.
-    #[test]
-    fn commitment_is_window_bound() {
-        let env = odra_test::env();
-        let (mut registry, mut book) = setup(&env);
-
-        let w1 = registry.open_window();
-        book.submit_sealed_order(w1, bytes(b"o1"));
-        let c1 = book.get_commitment(w1);
-
-        registry.close_window(w1);
-        let w2 = registry.open_window();
-        book.submit_sealed_order(w2, bytes(b"o1"));
-        let c2 = book.get_commitment(w2);
-
-        assert_ne!(w1, w2);
-        assert_ne!(c1, c2);
-    }
+    // Window-binding of the commitment (same order under a different window_id ⇒ different
+    // commitment) is exercised at the integration layer in `crossing_engine::tests`, since opening
+    // a second window now requires the registry↔engine sequencing guard (D-16) to be wired.
 
     /// The submitter is recorded per order and bound into the commitment: the same ciphertext
     /// submitted from a different account yields a different commitment, so a copied ciphertext

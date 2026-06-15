@@ -510,6 +510,9 @@ mod tests {
         fund.set_whitelisted(subscriber, true);
         fund.transfer(&redeemer, &U256::from(1_000u64));
         cash.transfer(&subscriber, &U256::from(100_000u64));
+        // Close the registry↔engine deployment loop so the window-sequencing guard can read
+        // settled/expired status (D-16).
+        registry.set_crossing_engine(engine.address());
 
         let wid = registry.open_window();
 
@@ -824,5 +827,75 @@ mod tests {
         s.env.advance_block_time(DEADLINE_MS + 1);
         s.engine.expire_window(s.wid);
         assert_eq!(s.engine.try_expire_window(s.wid), Err(Error::WindowExpired.into()));
+    }
+
+    // --- window sequencing guard (D-16): a new window may not open until the previous one is
+    // resolved (settled or expired); the registry reads that status from the engine. ---
+
+    #[test]
+    fn open_next_window_after_settle_succeeds() {
+        let mut s = setup();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), s.wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        s.engine
+            .settle(clearing_result(s.wid, s.redeemer, s.subscriber), attestation);
+
+        s.env.set_caller(s.env.get_account(0));
+        let w2 = s.registry.open_window();
+        assert_eq!(w2, s.wid + 1);
+        assert!(s.registry.is_open(w2));
+    }
+
+    #[test]
+    fn open_next_window_after_expire_succeeds() {
+        let mut s = setup();
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        s.env.advance_block_time(DEADLINE_MS + 1);
+        s.engine.expire_window(s.wid);
+
+        s.env.set_caller(s.env.get_account(0));
+        let w2 = s.registry.open_window();
+        assert_eq!(w2, s.wid + 1);
+        assert!(s.registry.is_open(w2));
+    }
+
+    #[test]
+    fn open_next_window_before_resolve_reverts() {
+        let mut s = setup();
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        // Previous window is closed but neither settled nor expired.
+        assert_eq!(
+            s.registry.try_open_window(),
+            Err(crate::window_registry::Error::PreviousWindowUnresolved.into())
+        );
+    }
+
+    /// Window-binding of the order commitment: the same orders under a different window_id yield a
+    /// different commitment (window_id is part of the commitment preimage).
+    #[test]
+    fn commitment_differs_across_windows() {
+        let mut s = setup();
+        let c1 = s.book.get_commitment(s.wid);
+
+        // Resolve window 1 (expire) so a second window may open.
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(s.wid);
+        s.env.advance_block_time(DEADLINE_MS + 1);
+        s.engine.expire_window(s.wid);
+        let w2 = s.registry.open_window();
+
+        // Replay the identical orders (same submitters, same ciphertexts, same order) into w2.
+        s.env.set_caller(s.redeemer);
+        s.book.submit_sealed_order(w2, Bytes::from(b"redeem-order".to_vec()));
+        s.env.set_caller(s.subscriber);
+        s.book.submit_sealed_order(w2, Bytes::from(b"subscribe-order".to_vec()));
+        let c2 = s.book.get_commitment(w2);
+
+        assert_ne!(s.wid, w2);
+        assert_ne!(c1, c2);
     }
 }

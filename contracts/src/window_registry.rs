@@ -1,10 +1,18 @@
 use odra::prelude::*;
+use odra::ContractRef;
+use crate::crossing_engine::CrossingEngineContractRef;
 
 #[odra::odra_error]
 pub enum Error {
     NotAdmin = 0,
     WindowNotFound = 1,
     WindowAlreadyClosed = 2,
+    /// A new window cannot open until the previous one is settled or expired.
+    PreviousWindowUnresolved = 3,
+    /// `set_crossing_engine` must be called (once) before opening a second window.
+    CrossingEngineNotSet = 4,
+    /// `set_crossing_engine` has already been set; it is immutable.
+    CrossingEngineAlreadySet = 5,
 }
 
 /// Metadata stored for each crossing window.
@@ -32,6 +40,9 @@ pub struct WindowRegistry {
     // can confirm the attestation's rule_version matches the current on-chain version.
     rule_ver: Var<u32>,
     rule_history: Mapping<u32, String>,
+    // CrossingEngine address, set once (admin) after deploy; read to check whether the previous
+    // window has been resolved (settled or expired) before opening a new one (D-16).
+    crossing_engine: Var<Address>,
 }
 
 #[odra::module]
@@ -46,9 +57,37 @@ impl WindowRegistry {
         self.rule_history.set(&1u32, initial_rule);
     }
 
+    /// Wires the `CrossingEngine` whose settled/expired status gates new windows. Admin only, and
+    /// settable exactly once (immutable thereafter) — the registry and engine reference each other,
+    /// so this closes the deployment loop: deploy registry, deploy engine (with the registry
+    /// address), then call this with the engine address before opening a second window.
+    pub fn set_crossing_engine(&mut self, crossing_engine: Address) {
+        self.assert_admin();
+        if self.crossing_engine.get().is_some() {
+            self.env().revert(Error::CrossingEngineAlreadySet);
+        }
+        self.crossing_engine.set(crossing_engine);
+    }
+
     /// Opens a new crossing window. Admin only. Returns the new window_id.
+    ///
+    /// A new window may not open while the previous one is closed-but-unresolved: the previous
+    /// window must be settled or expired (D-16), so escrow (an account-keyed global ledger in
+    /// `CrossingEngine`) never backs two live windows at once. The first window has no predecessor
+    /// and so needs no engine wiring; every later window requires `set_crossing_engine` first.
     pub fn open_window(&mut self) -> u64 {
         self.assert_admin();
+        let prev = self.active_wid.get_or_default();
+        if prev != 0 {
+            let engine_addr = self
+                .crossing_engine
+                .get()
+                .unwrap_or_else(|| self.env().revert(Error::CrossingEngineNotSet));
+            let engine = CrossingEngineContractRef::new(self.env(), engine_addr);
+            if !engine.is_window_consumed(prev) && !engine.is_window_expired(prev) {
+                self.env().revert(Error::PreviousWindowUnresolved);
+            }
+        }
         let wid = self.next_wid.get_or_default();
         let now = self.env().get_block_time();
         self.windows.set(
@@ -142,7 +181,7 @@ impl WindowRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::{WindowRegistry, WindowRegistryInitArgs};
+    use super::{Error, WindowRegistry, WindowRegistryInitArgs};
     use odra::host::Deployer;
     use odra::prelude::*;
 
@@ -224,5 +263,36 @@ mod tests {
         assert_eq!(registry.get_published_rule(), new_rule);
         assert_eq!(registry.get_rule_at_version(1), Some(RULE.to_string()));
         assert_eq!(registry.get_rule_at_version(2), Some(new_rule));
+    }
+
+    #[test]
+    fn set_crossing_engine_is_once_only() {
+        let env = odra_test::env();
+        let mut registry = WindowRegistry::deploy(
+            &env,
+            WindowRegistryInitArgs { initial_rule: RULE.to_string() },
+        );
+        let engine = env.get_account(5); // any address stands in for the engine here
+        registry.set_crossing_engine(engine);
+        // A second set is rejected (immutable).
+        assert_eq!(
+            registry.try_set_crossing_engine(env.get_account(6)),
+            Err(Error::CrossingEngineAlreadySet.into())
+        );
+    }
+
+    #[test]
+    fn non_admin_cannot_set_crossing_engine() {
+        let env = odra_test::env();
+        let mut registry = WindowRegistry::deploy(
+            &env,
+            WindowRegistryInitArgs { initial_rule: RULE.to_string() },
+        );
+        let mallory = env.get_account(1);
+        env.set_caller(mallory);
+        assert_eq!(
+            registry.try_set_crossing_engine(mallory),
+            Err(Error::NotAdmin.into())
+        );
     }
 }
