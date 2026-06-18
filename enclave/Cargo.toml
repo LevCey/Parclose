@@ -1,0 +1,10 @@
+[package]
+name = "parclose-enclave"
+version = "0.1.0"
+edition = "2021"
+description = "Parclose confidential clearing: the deterministic uniform-price crossing rule (design §4)."
+
+[dependencies]
+parclose-shared = { path = "../shared" }
+# Pinned to match the contracts crate's resolved odra (their bytesrepr encodings must agree).
+odra = { version = "=2.7.2", features = [], default-features = false }
