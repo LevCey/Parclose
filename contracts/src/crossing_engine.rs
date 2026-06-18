@@ -1046,4 +1046,64 @@ mod tests {
         let attestation = sign_claim(&s.sk, &s.pk, claim);
         assert_eq!(s.engine.try_settle(make(), attestation), Err(Error::InsufficientEscrow.into()));
     }
+
+    /// End-to-end across the vertical: the real enclave crossing rule computes the
+    /// `ClearingResult`, and `CrossingEngine` settles exactly that result. Proves the enclave's
+    /// output is settleable as-is (no hand-coded result).
+    #[test]
+    fn enclave_clearing_settles_end_to_end() {
+        use parclose_enclave::{clear, SubmittedOrder};
+        use parclose_shared::{Order, SIDE_REDEEM, SIDE_SUBSCRIBE};
+
+        let mut s = setup();
+        let wid = s.wid;
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(wid);
+
+        // The decrypted orders behind the two sealed submissions: a 500-unit sell and a 500-unit
+        // buy, both at limit 100 — exactly what each participant escrowed.
+        let submitted = vec![
+            SubmittedOrder {
+                order: Order {
+                    side: SIDE_REDEEM,
+                    size: U256::from(QTY),
+                    limit: PRICE,
+                    window_id: wid,
+                    account: s.redeemer,
+                },
+                id: [1u8; 32],
+            },
+            SubmittedOrder {
+                order: Order {
+                    side: SIDE_SUBSCRIBE,
+                    size: U256::from(QTY),
+                    limit: PRICE,
+                    window_id: wid,
+                    account: s.subscriber,
+                },
+                id: [2u8; 32],
+            },
+        ];
+        // clear() is pure/deterministic, so calling it per use yields identical results.
+        let compute = || clear(wid, &submitted, 1);
+
+        assert_eq!(compute().price, PRICE); // enclave priced the cross at P* = 100
+        let output_hash = s.engine.compute_output_hash(compute());
+        let input_hash = s.book.get_commitment(wid);
+        let rule_version = s.registry.rule_version();
+        let claim = base_claim(s.engine.address(), wid, rule_version, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+
+        s.engine.settle(compute(), attestation);
+        assert!(s.engine.is_window_consumed(wid));
+
+        s.env.set_caller(s.redeemer);
+        s.engine.withdraw();
+        s.env.set_caller(s.subscriber);
+        s.engine.withdraw();
+
+        // Full 500-unit fill at P* = 100: redeemer receives cash, subscriber receives fund.
+        assert_eq!(s.cash.balance_of(&s.redeemer), U256::from(CASH));
+        assert_eq!(s.fund.balance_of(&s.subscriber), U256::from(QTY));
+    }
 }

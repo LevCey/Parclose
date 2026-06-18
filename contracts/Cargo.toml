@@ -10,6 +10,8 @@ parclose-shared = { path = "../shared" }
 
 [dev-dependencies]
 odra-test = { version = "2.2.0", features = [], default-features = false }
+# Test-only: drive settlement with the real enclave clearing rule (host build; not in the Wasm).
+parclose-enclave = { path = "../enclave" }
 
 [build-dependencies]
 odra-build = { version = "2.2.0", features = [], default-features = false }
