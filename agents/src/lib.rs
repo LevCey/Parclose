@@ -34,11 +34,13 @@
 pub mod agent;
 pub mod anthropic;
 pub mod llm;
+pub mod seal;
 pub mod strategy;
 pub mod types;
 
 pub use agent::Agent;
 pub use anthropic::AnthropicClient;
 pub use llm::{LLMClient, LLMError, OfflineHeuristicLLM, Prompt, ScriptedLLM};
+pub use seal::seal_decision;
 pub use strategy::{build_prompt, parse_decision, StrategyError};
 pub use types::{AgentPersona, Decision, FactorTrace, Perception, Side};

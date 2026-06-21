@@ -25,6 +25,9 @@ use odra::casper_types::U256;
 use odra::prelude::Address;
 use parclose_shared::{ClearingResult, Order, Settlement, SIDE_REDEEM, SIDE_SUBSCRIBE};
 
+pub mod open;
+pub use open::{open_window, OpenedWindow, SealedSubmission};
+
 /// A decrypted order together with its on-chain identity — the ciphertext hash recorded by
 /// `SealedOrderBook`. The id is the neutral tiebreak key `H` for residual allocation.
 pub struct SubmittedOrder {

@@ -1,0 +1,17 @@
+[package]
+name = "parclose-seal"
+version = "0.1.0"
+edition = "2021"
+description = "Parclose sealed-order encryption: X25519 ECDH + XChaCha20-Poly1305 with associated data binding each ciphertext to its window and on-chain submitter (D-15)."
+
+[dependencies]
+parclose-shared = { path = "../shared" }
+# Same odra the shared crate resolves to, for the canonical Order encoding (bytesrepr) and Address.
+odra = { version = "=2.7.2", features = [], default-features = false }
+# X25519 ECDH to a static enclave key; XChaCha20-Poly1305 AEAD; SHA-256 KDF; blake2b-256 to match
+# the on-chain ciphertext-hash derivation in SealedOrderBook.
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+blake2 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }

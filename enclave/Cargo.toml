@@ -8,3 +8,9 @@ description = "Parclose confidential clearing: the deterministic uniform-price c
 parclose-shared = { path = "../shared" }
 # Pinned to match the contracts crate's resolved odra (their bytesrepr encodings must agree).
 odra = { version = "=2.7.2", features = [], default-features = false }
+# Opens the sealed ciphertext set posted on-chain; the decrypt half of the seal scheme.
+parclose-seal = { path = "../seal" }
+
+[dev-dependencies]
+# Test-only: seal orders to drive the open path. Production sealing happens client-side (agents).
+rand_core = { version = "0.6", features = ["getrandom"] }
