@@ -1106,4 +1106,74 @@ mod tests {
         assert_eq!(s.cash.balance_of(&s.redeemer), U256::from(CASH));
         assert_eq!(s.fund.balance_of(&s.subscriber), U256::from(QTY));
     }
+
+    #[test]
+    fn dev_signer_attestation_settles() {
+        // The standalone dev signer (W1.5.1) must be a drop-in for the in-test signer: it builds
+        // and signs the identical claim and derives output_hash = blake2b-256(result.to_bytes()).
+        // A successful settle proves byte-compatibility with the on-chain verify path AND that the
+        // off-chain blake2b matches the engine's env().hash.
+        use parclose_enclave::{clear, AttestationContext, DevSigner, SubmittedOrder};
+        use parclose_shared::{Order, SIDE_REDEEM, SIDE_SUBSCRIBE};
+
+        let mut s = setup();
+        let wid = s.wid;
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.close_window(wid);
+
+        let submitted = vec![
+            SubmittedOrder {
+                order: Order {
+                    side: SIDE_REDEEM,
+                    size: U256::from(QTY),
+                    limit: PRICE,
+                    window_id: wid,
+                    account: s.redeemer,
+                },
+                id: [1u8; 32],
+            },
+            SubmittedOrder {
+                order: Order {
+                    side: SIDE_SUBSCRIBE,
+                    size: U256::from(QTY),
+                    limit: PRICE,
+                    window_id: wid,
+                    account: s.subscriber,
+                },
+                id: [2u8; 32],
+            },
+        ];
+        let result = clear(wid, &submitted, 1);
+        assert_eq!(result.price, PRICE);
+
+        // The dev signer uses the same enclave key the engine was configured with ([7u8; 32]).
+        let signer = DevSigner::from_secp256k1_bytes([7u8; 32]).unwrap();
+        assert_eq!(signer.public_key(), s.pk, "dev signer key must match the engine's enclave key");
+
+        let commitment = s.book.get_commitment(wid);
+        let context = AttestationContext {
+            network: NETWORK.to_string(),
+            crossing_engine: s.engine.address(),
+            rule_version: s.registry.rule_version(),
+            function: FUNCTION.to_string(),
+            code_hash: measurement(),
+            input_hash: commitment.clone(),
+            secrets_hash: commitment,
+            timestamp: 0,
+            nonce: 1,
+        };
+        let attestation = signer.attest(&result, &context);
+
+        // Permissionless submit by a non-participant.
+        s.env.set_caller(s.env.get_account(3));
+        s.engine.settle(result, attestation);
+        assert!(s.engine.is_window_consumed(wid));
+
+        s.env.set_caller(s.redeemer);
+        s.engine.withdraw();
+        s.env.set_caller(s.subscriber);
+        s.engine.withdraw();
+        assert_eq!(s.cash.balance_of(&s.redeemer), U256::from(CASH));
+        assert_eq!(s.fund.balance_of(&s.subscriber), U256::from(QTY));
+    }
 }

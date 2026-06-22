@@ -196,7 +196,14 @@ pub fn open_order(
 
 /// The canonical on-chain ciphertext hash (blake2b-256), matching `SealedOrderBook`'s derivation.
 pub fn ciphertext_hash(ciphertext: &[u8]) -> [u8; 32] {
-    let digest = Blake2b256::digest(ciphertext);
+    blake2b_256(ciphertext)
+}
+
+/// blake2b-256 of arbitrary bytes — the same hash Casper's on-chain `env().hash` computes. Used
+/// both for the on-chain ciphertext hash and for the attestation's `output_hash` commitment, so
+/// off-chain components produce digests the contracts agree with.
+pub fn blake2b_256(data: &[u8]) -> [u8; 32] {
+    let digest = Blake2b256::digest(data);
     let mut out = [0u8; 32];
     out.copy_from_slice(&digest);
     out
