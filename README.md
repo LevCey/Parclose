@@ -102,14 +102,15 @@ Parclose uses Casper as a coherent, auditor-legible home for confidential, regul
 
 ---
 
-## Repository layout (planned)
+## Repository layout
 
 ```
-contracts/   Odra/Rust smart contracts (intake, verify + settlement, fund token + cash leg, window registry)
-enclave/     confidential clearing (uniform-price crossing) + attestation; includes a labeled testnet/dev signer
-agents/      autonomous liquidity agents (perceive → reason → act)
-dashboard/   streaming demo UI
-shared/      canonical encodings shared across the above
+contracts/   Odra/Rust smart contracts: SealedOrderBook, CrossingEngine, FundToken, CashToken, WindowRegistry
+enclave/     confidential clearing (uniform-price crossing), sealed-order decryption, and a labeled testnet/dev attestation signer
+seal/        sealed-order encryption (X25519 ECDH + XChaCha20-Poly1305) binding each order to its window and submitter
+agents/      autonomous liquidity agents (perceive → reason → act): the LLM strategy and a blind-competition harness
+shared/      canonical cross-component encodings (order, attestation claim, clearing result)
+dashboard/   streaming demo UI (planned)
 ```
 
 ---
@@ -118,9 +119,13 @@ shared/      canonical encodings shared across the above
 
 Parclose is in **active development** for the Casper Agentic Buildathon 2026 (Qualification Round, June 2026). It is a Casper **Testnet** prototype: not production software, not audited, and it custodies no real value — both settlement legs are test tokens.
 
-- [ ] Smart contracts on Casper Testnet
-- [ ] Confidential clearing enclave (plus a labeled testnet/dev attestation signer for development)
-- [ ] Autonomous liquidity agents (two or more, competing blind)
+**Implemented and tested off-chain so far:** the five smart contracts (attestation verification + escrow settlement, the compliant fund token and cash leg, sealed-order intake, and the window registry); the confidential uniform-price clearing rule and sealed-order decryption; the sealed-order encryption; the labeled testnet/dev attestation signer; and the autonomous liquidity agents (reasoning and blind competition). All are covered by an automated test suite, and the full off-chain flow — seal → confidential clearing → signed attestation → on-chain verification + atomic settlement — runs end to end against the contracts in Odra's test VM.
+
+Toward the live prototype:
+
+- [ ] Smart contracts deployed on Casper Testnet
+- [ ] Confidential clearing on a real TEE (a labeled testnet/dev attestation signer is used during development)
+- [ ] Autonomous liquidity agents driving live windows (two or more, competing blind)
 - [ ] Streaming demo dashboard
 - [ ] Demo video
 
@@ -130,13 +135,50 @@ Deployed contract addresses and transaction links will be published here as the 
 
 ## Development
 
-The intended stack is Rust with the Odra framework (compiled to Wasm) for the contracts, a confidential-compute guest for the enclave, an LLM-driven agent runtime, and a streaming dashboard.
+Parclose is Rust with the [Odra](https://odra.dev) framework (compiled to Wasm) for the contracts, a confidential-compute guest for the enclave, and an LLM-driven agent runtime. The streaming dashboard is planned.
 
-**Prerequisites (planned):** Rust and cargo; the Odra toolchain; the Casper client / CLI; and a JavaScript runtime (Node.js) for the dashboard.
+### Prerequisites
 
-**Configuration:** all network endpoints, keys, and contract addresses are supplied via environment variables — nothing is hard-coded or committed; the required variables will be documented in an example env file.
+- **Rust** via [rustup](https://rustup.rs). Each crate pins its toolchain in a `rust-toolchain` file; rustup installs the pinned toolchain automatically on first build.
+- **[cargo-odra](https://github.com/odradev/cargo-odra)** for the contracts: `cargo install cargo-odra`.
+- **curl** — used by the agents' reasoning client for the live (model-backed) path.
 
-Build, test, deploy (Casper Testnet), and run-demo instructions will be added here as each component lands.
+### Build & test
+
+Each component is its own crate; run its test suite from the crate directory:
+
+```bash
+cd contracts && cargo odra test   # smart contracts (Odra VM)
+cd enclave   && cargo test        # confidential clearing, sealed-order decryption, dev signer
+cd seal      && cargo test        # sealed-order encryption
+cd agents    && cargo test        # liquidity agents: reasoning, blind competition, encryption client
+```
+
+### Run the demos (offline, no network)
+
+```bash
+# Two liquidity agents reason blind and converge into one uniform clearing price
+cd agents && cargo run --example compete
+
+# The off-chain pipeline end to end: seal → open → clear → sign an attestation
+cd enclave && cargo run --example dev_signer
+```
+
+To run the agents against the real model, set an API key and use the live example (the only path that makes a network call); without a key the agents use the offline reasoning stand-in:
+
+```bash
+cd agents
+export ANTHROPIC_API_KEY=sk-...        # optionally ANTHROPIC_MODEL
+cargo run --example live_compete
+```
+
+### Configuration
+
+All endpoints, keys, and contract addresses are supplied via environment variables — nothing is hard-coded or committed. See [`.env.example`](.env.example) for the full list; copy it to `.env` and fill in your own values.
+
+### Deploy (Casper Testnet)
+
+Deploy instructions, the deployed contract addresses, and on-chain transaction links will be added here once the prototype is deployed to Testnet.
 
 ---
 
