@@ -7,6 +7,13 @@ edition = "2021"
 odra = { version = "2.2.0", features = [], default-features = false }
 odra-modules = { version = "2.2.0", features = [], default-features = false }
 parclose-shared = { path = "../shared" }
+# Livenet deploy backend (host-only; pulled in only by the `livenet` feature for the deploy bin).
+odra-casper-livenet-env = { version = "2.2.0", optional = true }
+
+[features]
+default = []
+# Enables the Testnet deploy binary (src/bin/deploy.rs).
+livenet = ["odra-casper-livenet-env"]
 
 [dev-dependencies]
 odra-test = { version = "2.2.0", features = [], default-features = false }
@@ -27,6 +34,12 @@ test = false
 [[bin]]
 name = "contracts_build_schema"
 path = "bin/build_schema.rs"
+test = false
+
+[[bin]]
+name = "deploy"
+path = "src/bin/deploy.rs"
+required-features = ["livenet"]
 test = false
 
 [profile.release]
