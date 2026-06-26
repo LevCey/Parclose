@@ -55,6 +55,14 @@ pub trait LLMClient {
     fn complete(&self, prompt: &Prompt) -> Result<String, LLMError>;
 }
 
+/// Lets a boxed transport be used as an [`LLMClient`], so a caller can select the real client or
+/// an offline double at runtime (e.g. depending on whether an API key is configured).
+impl LLMClient for Box<dyn LLMClient> {
+    fn complete(&self, prompt: &Prompt) -> Result<String, LLMError> {
+        (**self).complete(prompt)
+    }
+}
+
 /// A fixed-reply double: returns the same string regardless of prompt. Useful for testing the
 /// parser/validator and for injecting a contrasting decision in model-in-the-loop tests.
 #[derive(Clone, Debug)]

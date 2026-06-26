@@ -23,7 +23,7 @@ use serde_json::json;
 use crate::llm::{LLMClient, LLMError, Prompt};
 
 /// Default model id, overridable via `ANTHROPIC_MODEL`.
-pub const DEFAULT_MODEL: &str = "claude-3-5-sonnet-latest";
+pub const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 /// Default Messages endpoint, overridable via `ANTHROPIC_BASE_URL`.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1/messages";
 /// The Anthropic API version header value.

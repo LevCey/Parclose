@@ -24,7 +24,10 @@ use odra::host::HostRefLoader;
 use odra::prelude::Address;
 use rand_core::OsRng;
 
-use parclose_agents::{seal_decision, Agent, AgentPersona, Decision, OfflineHeuristicLLM, Perception, Side};
+use parclose_agents::{
+    seal_decision, Agent, AgentPersona, AnthropicClient, Decision, LLMClient, OfflineHeuristicLLM,
+    Perception, Side,
+};
 use parclose_enclave::{clear, open_window, AttestationContext, DevSigner, SealedSubmission};
 use parclose_seal::EnclaveSecretKey;
 
@@ -58,6 +61,21 @@ fn address(s: &str) -> Address {
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+}
+
+/// Picks the real Anthropic reasoning client when `ANTHROPIC_API_KEY` is set, else the offline
+/// deterministic stand-in — so the same live on-chain flow runs with or without an API key.
+fn make_llm() -> Box<dyn LLMClient> {
+    match AnthropicClient::from_env() {
+        Ok(client) => {
+            println!("reasoning with model: {}", client.model());
+            Box::new(client)
+        }
+        Err(_) => {
+            println!("reasoning with the offline stand-in (no ANTHROPIC_API_KEY)");
+            Box::new(OfflineHeuristicLLM)
+        }
+    }
 }
 
 fn print_decision(name: &str, d: &Decision) {
@@ -111,9 +129,9 @@ fn main() {
             cash_inventory: U256::zero(),
             max_size: U256::from(MAX_SIZE),
             risk_appetite_bps: 300,
-            style: "exiting inventory; prices to get filled".into(),
+            style: "You must fully exit your fund position this window; price competitively at or just below NAV to guarantee a fill.".into(),
         },
-        OfflineHeuristicLLM,
+        make_llm(),
     );
     let boreas = Agent::new(
         AgentPersona {
@@ -123,10 +141,10 @@ fn main() {
             fund_inventory: U256::zero(),
             cash_inventory: U256::from(200_000u64),
             max_size: U256::from(MAX_SIZE),
-            risk_appetite_bps: 300,
-            style: "accumulating; bids through fair to win the cross".into(),
+            risk_appetite_bps: 350,
+            style: "Aggressive accumulator with ample cash; bid above NAV to win the cross.".into(),
         },
-        OfflineHeuristicLLM,
+        make_llm(),
     );
 
     let da = aria.decide(&perception).expect("Aria decides");
