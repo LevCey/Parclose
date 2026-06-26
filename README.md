@@ -123,13 +123,25 @@ Parclose is in **active development** for the Casper Agentic Buildathon 2026 (Qu
 
 Toward the live prototype:
 
-- [ ] Smart contracts deployed on Casper Testnet
+- [x] Smart contracts deployed on Casper Testnet
 - [ ] Confidential clearing on a real TEE (a labeled testnet/dev attestation signer is used during development)
 - [ ] Autonomous liquidity agents driving live windows (two or more, competing blind)
 - [ ] Streaming demo dashboard
 - [ ] Demo video
 
-Deployed contract addresses and transaction links will be published here as the prototype lands.
+### Deployed on Casper Testnet
+
+The five contracts are live on Casper Testnet (`casper-test`), wired together (registry ↔ engine) and with the custody endpoint whitelisted. Contract package hashes (view on the [block explorer](https://testnet.cspr.live)):
+
+| Contract | Package hash |
+|---|---|
+| `WindowRegistry` | [`66f68780…e7190`](https://testnet.cspr.live/contract-package/66f68780c36d3646415170125503198128965e369e0132719f42af26bece7190) |
+| `FundToken` | [`4922ed8a…de39e`](https://testnet.cspr.live/contract-package/4922ed8af46bb36a5d5ab3507107c86d775e535ee58e9bd69ca25097024de39e) |
+| `CashToken` | [`0c9507ca…f01eb`](https://testnet.cspr.live/contract-package/0c9507ca709d750f99fcd4b9c69eddd93598f6323a9b2c73f28e5590d64f01eb) |
+| `SealedOrderBook` | [`2895f385…42a9d`](https://testnet.cspr.live/contract-package/2895f3852fc8e070ff1b7fa74ededd46587c1d7e43badcd51b965d0a93b42a9d) |
+| `CrossingEngine` | [`ead50d46…c9150`](https://testnet.cspr.live/contract-package/ead50d4643379c2b7d82f872d59449164501de13d8d0d42f35d0cd5dc93c9150) |
+
+The `CrossingEngine` is configured with the dev attestation signer's secp256k1 key as its enclave trust root, so a signed clearing result verifies and settles on-chain.
 
 ---
 
@@ -178,7 +190,18 @@ All endpoints, keys, and contract addresses are supplied via environment variabl
 
 ### Deploy (Casper Testnet)
 
-Deploy instructions, the deployed contract addresses, and on-chain transaction links will be added here once the prototype is deployed to Testnet.
+The contracts are deployed with the Odra livenet deploy binary. Build the wasm first (`cargo odra build`, then `wasm-opt` each artifact), then:
+
+```bash
+cd contracts
+ODRA_CASPER_LIVENET_NODE_ADDRESS=http://<node>:7777 \
+ODRA_CASPER_LIVENET_EVENTS_URL=http://<node>:9999/events \
+ODRA_CASPER_LIVENET_CHAIN_NAME=casper-test \
+ODRA_CASPER_LIVENET_SECRET_KEY_PATH=/path/to/secret_key.pem \
+cargo run --bin deploy --features livenet
+```
+
+It deploys all five contracts, wires the registry to the engine, whitelists the custody endpoint, and prints every address (see [Status](#status) for the live ones). Note: keep each deploy's gas under the network `block_gas_limit`, and set the transaction's gas-price tolerance to the network's current gas price — a higher tolerance is rejected as an "invalid pricing mode" on the current Testnet.
 
 ---
 

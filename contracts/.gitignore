@@ -6,3 +6,5 @@ Cargo.lock
 .builder*
 /wasm
 .env
+/vendor
+/.cargo

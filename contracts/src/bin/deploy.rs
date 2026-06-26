@@ -25,12 +25,13 @@ use contracts::fund_token::{FundToken, FundTokenInitArgs};
 use contracts::sealed_order_book::{SealedOrderBook, SealedOrderBookInitArgs};
 use contracts::window_registry::{WindowRegistry, WindowRegistryInitArgs};
 
-/// Gas for a standard contract install (motes).
-const GAS_DEPLOY: u64 = 350_000_000_000;
-/// Gas for the largest install (CrossingEngine).
-const GAS_DEPLOY_ENGINE: u64 = 500_000_000_000;
+/// Gas for a contract install (motes). Must stay under the network block_gas_limit of
+/// 812_500_000_000 (812.5 CSPR); the chainspec refunds 75% of unused gas, so headroom is cheap.
+const GAS_DEPLOY: u64 = 800_000_000_000;
+/// Gas for the largest install (CrossingEngine), still under the block gas limit.
+const GAS_DEPLOY_ENGINE: u64 = 800_000_000_000;
 /// Gas for a state-changing entry-point call.
-const GAS_CALL: u64 = 5_000_000_000;
+const GAS_CALL: u64 = 20_000_000_000;
 
 const NETWORK: &str = "casper-test";
 const RULE: &str = "uniform-price crossing v1";
