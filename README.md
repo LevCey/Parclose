@@ -143,6 +143,8 @@ The five contracts are live on Casper Testnet (`casper-test`), wired together (r
 
 The `CrossingEngine` is configured with the dev attestation signer's secp256k1 key as its enclave trust root, so a signed clearing result verifies and settles on-chain.
 
+A full crossing window has been run end to end on Testnet — open → escrow both legs → submit sealed orders (ciphertext only) → close → off-chain clearing → signed attestation → on-chain verification + atomic settlement → withdraw. The settlement transaction (the `CrossingEngine` verifying the attestation and settling from escrow): [`894d6dfb…79f69e`](https://testnet.cspr.live/transaction/894d6dfbb4096d42739ddfca83b0f4b1235b6215fe7c41d6685c62178179f69e).
+
 ---
 
 ## Development

@@ -9,11 +9,15 @@ odra-modules = { version = "2.2.0", features = [], default-features = false }
 parclose-shared = { path = "../shared" }
 # Livenet deploy backend (host-only; pulled in only by the `livenet` feature for the deploy bin).
 odra-casper-livenet-env = { version = "2.2.0", optional = true }
+# Host-only, livenet demo only: seal orders + run the off-chain clearing/signing in demo_window.
+parclose-seal = { path = "../seal", optional = true }
+parclose-enclave = { path = "../enclave", optional = true }
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
 
 [features]
 default = []
-# Enables the Testnet deploy binary (src/bin/deploy.rs).
-livenet = ["odra-casper-livenet-env"]
+# Enables the Testnet deploy + demo binaries (src/bin/deploy.rs, src/bin/demo_window.rs).
+livenet = ["odra-casper-livenet-env", "parclose-seal", "parclose-enclave", "rand_core"]
 
 [dev-dependencies]
 odra-test = { version = "2.2.0", features = [], default-features = false }
@@ -39,6 +43,12 @@ test = false
 [[bin]]
 name = "deploy"
 path = "src/bin/deploy.rs"
+required-features = ["livenet"]
+test = false
+
+[[bin]]
+name = "demo_window"
+path = "src/bin/demo_window.rs"
 required-features = ["livenet"]
 test = false
 
