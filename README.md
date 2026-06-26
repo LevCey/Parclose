@@ -125,7 +125,7 @@ Toward the live prototype:
 
 - [x] Smart contracts deployed on Casper Testnet
 - [ ] Confidential clearing on a real TEE (a labeled testnet/dev attestation signer is used during development)
-- [ ] Autonomous liquidity agents driving live windows (two or more, competing blind)
+- [x] Autonomous liquidity agents driving live windows (two or more, competing blind)
 - [ ] Streaming demo dashboard
 - [ ] Demo video
 
@@ -144,6 +144,8 @@ The five contracts are live on Casper Testnet (`casper-test`), wired together (r
 The `CrossingEngine` is configured with the dev attestation signer's secp256k1 key as its enclave trust root, so a signed clearing result verifies and settles on-chain.
 
 A full crossing window has been run end to end on Testnet — open → escrow both legs → submit sealed orders (ciphertext only) → close → off-chain clearing → signed attestation → on-chain verification + atomic settlement → withdraw. The settlement transaction (the `CrossingEngine` verifying the attestation and settling from escrow): [`894d6dfb…79f69e`](https://testnet.cspr.live/transaction/894d6dfbb4096d42739ddfca83b0f4b1235b6215fe7c41d6685c62178179f69e).
+
+Two autonomous liquidity agents also drive a live window end to end across two accounts: a redeem agent and a subscribe agent each reason blind, reach different orders, seal and submit them under their own keys, and the window clears at a single uniform price and settles on-chain — a real two-sided economic cross.
 
 ---
 
