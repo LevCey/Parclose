@@ -54,8 +54,11 @@ const TICK: u64 = 1;
 const MAX_SIZE: u64 = 100;
 const CASH_TO_SUBSCRIBER: u64 = 100_000; // seeded to account 1 so it can escrow the cash leg
 
-const CALL_GAS: u64 = 100_000_000_000;
-const HEAVY_GAS: u64 = 250_000_000_000;
+// Per-call gas limits. On this Testnet's payment-limited pricing the limit is
+// charged in full (no refund), so these are sized to observed consumption with
+// headroom: light calls consume ~1.6 CSPR, deposits ~2.3, settle ~4.7.
+const CALL_GAS: u64 = 10_000_000_000; // 10 CSPR
+const HEAVY_GAS: u64 = 25_000_000_000; // 25 CSPR
 
 fn address(s: &str) -> Address {
     Address::from_str(s).expect("valid contract address")

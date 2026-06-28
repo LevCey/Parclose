@@ -27,8 +27,8 @@ const SEALED_ORDER_BOOK: &str =
 const CROSSING_ENGINE: &str =
     "hash-ead50d4643379c2b7d82f872d59449164501de13d8d0d42f35d0cd5dc93c9150";
 
-const CALL_GAS: u64 = 100_000_000_000;
-const HEAVY_GAS: u64 = 250_000_000_000;
+const CALL_GAS: u64 = 10_000_000_000;
+const HEAVY_GAS: u64 = 25_000_000_000;
 
 fn address(s: &str) -> Address {
     Address::from_str(s).expect("valid contract address")

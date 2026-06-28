@@ -1,6 +1,6 @@
 {
   "network": "casper-test",
-  "window_id": 1,
+  "window_id": 6,
   "model": "claude-sonnet-4-6",
   "deployed": {
     "window_registry": "hash-66f68780c36d3646415170125503198128965e369e0132719f42af26bece7190",
@@ -13,50 +13,50 @@
     {
       "name": "Aria",
       "side": "redeem",
-      "limit": 997,
+      "limit": 990,
       "size": "100",
-      "rationale": "I must fully exit my 100-unit position this window, so I set size to the maximum 100 and price the limit at 997 — just 3 bps below NAV — to stay competitive against unseen rival redeem orders while still well above the prior clear price of 990, balancing guaranteed fill probability against leaving minimal value on the table.",
+      "rationale": "Full exit required this window; setting limit at 990 matches the prior clear price, signaling competitive willingness to transact below NAV while maximizing fill probability against unseen subscriber liquidity. The 10 bps discount from NAV is well within the 300 bps risk tolerance and reflects the interaction of urgency, inventory pressure, and prior market context.",
       "factors": {
-        "nav_signal": "Attested NAV is 1000, establishing the ceiling; pricing at 997 keeps me within a tight 30 bps discount that reflects fair value while undercutting any rival redeeming at or above NAV.",
-        "inventory_risk": "Fund inventory is exactly 100 units with zero cash, and max_size is 100, so a full exit is both required and permissible — partial fills are unacceptable given the full-exit mandate.",
-        "fill_probability": "The prior clear price of 990 indicates buyers have historically been willing to cross at a meaningful discount; pricing at 997 is well above that level, significantly increasing the probability that subscribe-side liquidity will absorb my entire order.",
-        "prior_context": "The prior clearing price of 990 (100 bps below NAV) sets a floor reference; by pricing at 997 I remain above that precedent, signalling willingness to transact at a tight spread without appearing desperate, which should attract sufficient subscribe-side interest in this uniform-price window."
+        "nav_signal": "Attested NAV is 1000, so 990 represents a modest 1% discount that still provides fair value reference while ensuring the order is priced attractively to clear.",
+        "inventory_risk": "Fund inventory is exactly 100 units with zero cash, making full exit at max_size=100 mandatory to eliminate position risk this window.",
+        "fill_probability": "Pricing at the prior clear price of 990 aligns with observed market equilibrium, maximizing the probability that incoming subscribers will match against this redemption order.",
+        "prior_context": "Window 6 cleared previously at 990, establishing a price anchor; matching that level avoids undercutting unnecessarily while remaining competitive versus any other redeem orders priced higher."
       },
-      "ciphertext_hash": "eaa61c256414f9f43b21451ddac22f505d9ad4f1954fb01693674ecb830b554f"
+      "ciphertext_hash": "972ac412d6484ef2ff9ebccfe04151a5bdafba8d0a0a0540feca88884aa6255b"
     },
     {
       "name": "Boreas",
       "side": "subscribe",
       "limit": 1035,
       "size": "85",
-      "rationale": "As an aggressive accumulator with ample cash, I bid meaningfully above NAV to maximize fill probability in this blind cross, while sizing below the max to preserve flexibility given zero prior inventory base. The 350 bps risk appetite supports a limit of 1035 (3.5% above NAV), and the prior clear at 990 signals the cross may settle well below NAV, so bidding at 1035 ensures I win the allocation without overpaying relative to my risk ceiling.",
+      "rationale": "With zero fund inventory, ample cash, and a 350bps risk appetite above NAV, I bid aggressively at 1035 to dominate the crossing window against unseen redeemers; the prior clear at 990 signals recent softness but the attested NAV at 1000 and my accumulator mandate justify pricing well above it to ensure a fill. I size at 85 (below the 100 max) to leave a buffer against overexposure while still commanding a dominant presence in the cross.",
       "factors": {
-        "nav_signal": "Attested NAV is 1000; I set my limit at 1035, fully utilizing the 350 bps risk appetite above NAV to signal strong willingness to pay and attract the cross in my favor.",
-        "inventory_risk": "Fund inventory is zero and cash is 200,000, so I have ample capacity; sizing at 85 units (~$87,975 at limit) keeps exposure well within cash reserves while still being a meaningful accumulation.",
-        "fill_probability": "In a sealed uniform-price cross with unseen rivals, bidding 35 ticks above NAV materially increases my probability of being the clearing bid, especially if redeemers price near or below NAV.",
-        "prior_context": "The prior clearing price of 990 is below NAV, suggesting the last cross was redemption-dominated or thinly subscribed; this window I expect to face less competition on the subscribe side, yet I still bid aggressively to ensure a win."
+        "nav_signal": "Attested NAV is 1000, and my 350bps risk appetite allows a limit up to 1035, which I use fully to signal strong buy conviction above fair value.",
+        "inventory_risk": "Fund inventory is zero and cash is 200000, so taking on up to 85 units at 1035 costs ~87,975, well within my cash buffer and leaves room for future windows.",
+        "fill_probability": "Bidding at 1035—35 ticks above NAV—substantially increases the probability of clearing against any redeemer priced anywhere near or below NAV in this sealed uniform-price window.",
+        "prior_context": "The prior clear at 990 (10 below NAV) suggests recent redemption pressure; an aggressive above-NAV bid this window should flip the imbalance and secure a favorable cross for the subscribe side."
       },
-      "ciphertext_hash": "326bc77cd15d4fe277fc6448ade1f157b53df85c0dcb03cf908754e42c6a6947"
+      "ciphertext_hash": "9eddde6cf686a78c41c15fcbe1ce69d57cf381df346f70036a63d14a9224d2c2"
     }
   ],
   "clearing": {
-    "price": 1016,
+    "price": 1013,
     "fills": [
       {
-        "account": "account-hash-0101010101010101010101010101010101010101010101010101010101010101",
+        "account": "account-hash-6f8fbfda035669bfa1ac9c17d2ff17901112ca6a126717d5c04b34240c00f9d6",
         "fund_spent": "85",
         "cash_spent": "0",
         "fund_credit": "0",
-        "cash_credit": "86360"
+        "cash_credit": "86105"
       },
       {
-        "account": "account-hash-0202020202020202020202020202020202020202020202020202020202020202",
+        "account": "account-hash-96dcfc00c8aeedb0b110eeca4f2cc3140fe015727483f9c97a3c6724901e6eab",
         "fund_spent": "0",
-        "cash_spent": "86360",
+        "cash_spent": "86105",
         "fund_credit": "85",
         "cash_credit": "0"
       }
     ]
   },
-  "settlement_tx": "894d6dfbb4096d42739ddfca83b0f4b1235b6215fe7c41d6685c62178179f69e"
+  "settlement_tx": "40e336258008d64bc1ab51677a5d09dd161d4372b55891ca33174b0f6cc95930"
 }

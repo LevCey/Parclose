@@ -41,7 +41,7 @@ Parclose's liquidity agents are genuine autonomous agents, not a pricing formula
 
 - **Perceive** — read fund state, prior clearing prices, attested market/NAV inputs, and the agent's own inventory and risk limits.
 - **Reason** — an LLM strategy layer forms a view under uncertainty and competition, weighing the attested signal, its inventory and risk limits, fill probability against rivals, and prior clearing context. It produces a short, human-readable rationale and a concrete order.
-- **Act** — sign and submit a sealed order through a scoped smart account, then settle on-chain after clearing.
+- **Act** — sign and submit a sealed order under the agent's own funded key (a scoped smart account in production), then settle on-chain after clearing.
 
 At least two agents run independently, with different strategies, blind to one another — converging into one fair clearing price. Each agent's reasoning is legible (surfaced off-chain in the dashboard), and its order shifts meaningfully when its inputs change: it reasons, rather than applying a fixed closed-form rule.
 
@@ -51,7 +51,7 @@ At least two agents run independently, with different strategies, blind to one a
 
 ```
  Participants / agents ──► sealed order = ciphertext ──► SealedOrderBook (Casper)
-   (LLM + scoped smart account)                          stores ciphertext only; no plaintext
+   (LLM + signing key)                                   stores ciphertext only; no plaintext
         │ perceive market / fund state                            │
         ▼                                                          ▼
    reason (LLM) ─► sealed order                       confidential enclave
@@ -145,7 +145,7 @@ The `CrossingEngine` is configured with the dev attestation signer's secp256k1 k
 
 A full crossing window has been run end to end on Testnet — open → escrow both legs → submit sealed orders (ciphertext only) → close → off-chain clearing → signed attestation → on-chain verification + atomic settlement → withdraw. The settlement transaction (the `CrossingEngine` verifying the attestation and settling from escrow): [`894d6dfb…79f69e`](https://testnet.cspr.live/transaction/894d6dfbb4096d42739ddfca83b0f4b1235b6215fe7c41d6685c62178179f69e).
 
-Two autonomous liquidity agents also drive a live window end to end across two accounts: a redeem agent and a subscribe agent each reason blind, reach different orders, seal and submit them under their own keys, and the window clears at a single uniform price and settles on-chain — a real two-sided economic cross.
+Two autonomous liquidity agents also drive a live window end to end across two accounts. In window #6, reasoning with the real model (`claude-sonnet-4-6`), a redeem agent and a subscribe agent each reason blind and reach different orders (redeem 100 @ 990, subscribe 85 @ 1035), seal and submit them under their own keys; the window clears at a single uniform price of **1013** and settles on-chain — a real two-sided economic cross. The settlement transaction: [`40e33625…c95930`](https://testnet.cspr.live/transaction/40e336258008d64bc1ab51677a5d09dd161d4372b55891ca33174b0f6cc95930).
 
 ---
 
@@ -199,7 +199,7 @@ cd dashboard && python3 -m http.server
 
 ### Configuration
 
-All endpoints, keys, and contract addresses are supplied via environment variables — nothing is hard-coded or committed. See [`.env.example`](.env.example) for the full list; copy it to `.env` and fill in your own values.
+All endpoints, secrets, and network config are supplied via environment variables — no secrets are hard-coded or committed. See [`.env.example`](.env.example) for the full list; copy it to `.env` and fill in your own values. (The deployed package hashes also appear as constants in the demo binaries for convenience — they are public, non-secret identifiers.)
 
 ### Deploy (Casper Testnet)
 
