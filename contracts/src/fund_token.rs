@@ -11,12 +11,20 @@ pub enum Error {
     NotWhitelisted = 1,
 }
 
+/// Emitted whenever the transfer whitelist changes, so the compliance control is
+/// auditable on-chain.
+#[odra::event]
+pub struct Whitelisted {
+    pub address: Address,
+    pub allowed: bool,
+}
+
 /// FundToken — a compliant, transfer-restricted CEP-18 token.
 ///
 /// Transfers (including escrow and settlement) are permitted only between
 /// whitelisted holders. This is a stand-in for an ERC-3643-style compliant
 /// security token; the whitelist stands in for a compliance registry.
-#[odra::module(errors = Error)]
+#[odra::module(errors = Error, events = [Whitelisted])]
 pub struct FundToken {
     token: SubModule<Cep18>,
     admin: Var<Address>,
@@ -39,6 +47,7 @@ impl FundToken {
     pub fn set_whitelisted(&mut self, address: Address, allowed: bool) {
         self.assert_admin();
         self.whitelist.set(&address, allowed);
+        self.env().emit_event(Whitelisted { address, allowed });
     }
 
     /// Returns whether `address` is permitted to send or receive the token.

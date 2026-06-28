@@ -1,5 +1,8 @@
 use odra::casper_types::bytesrepr::{Bytes, ToBytes};
+use odra::casper_types::U256;
 use odra::prelude::*;
+use odra::ContractRef;
+use crate::crossing_engine::CrossingEngineContractRef;
 use crate::window_registry::WindowRegistryContractRef;
 
 #[odra::odra_error]
@@ -8,6 +11,12 @@ pub enum Error {
     WindowNotOpen = 0,
     /// Canonical encoding of a commitment field failed.
     Encoding = 1,
+    /// The crossing engine has already been configured; it is immutable.
+    EngineAlreadySet = 2,
+    /// The submitter has no escrow backing this order — rejected to close the
+    /// unescrowed-order denial-of-clearing vector (active once the book is wired
+    /// to its settlement engine).
+    NoBackingEscrow = 3,
 }
 
 /// Emitted for each accepted sealed order so the dashboard can show ciphertext arriving.
@@ -67,6 +76,8 @@ const COMMITMENT_DOMAIN: &[u8] = b"PARCLOSE_ORDER_COMMITMENT_V1";
 #[odra::module(errors = Error)]
 pub struct SealedOrderBook {
     registry: External<WindowRegistryContractRef>,
+    // Optional settlement engine. When set, submissions must be escrow-backed.
+    crossing_engine: Var<Address>,
     // window_id → count of accepted orders
     order_count: Mapping<u64, u64>,
     // (window_id, order_idx) → ciphertext bytes
@@ -86,6 +97,17 @@ impl SealedOrderBook {
         self.registry.set(registry_address);
     }
 
+    /// Wires the book to its settlement `CrossingEngine` (once; immutable after).
+    /// Once wired, `submit_sealed_order` only accepts orders from submitters who
+    /// have escrow deposited in the engine — so an unescrowed order that would
+    /// cross can no longer force the window to expire instead of settling (#2).
+    pub fn set_crossing_engine(&mut self, engine: Address) {
+        if self.crossing_engine.get().is_some() {
+            self.env().revert(Error::EngineAlreadySet);
+        }
+        self.crossing_engine.set(engine);
+    }
+
     /// Submits a sealed order for an open window. The window must be open (checked via
     /// WindowRegistry). The order's hash is derived on-chain as `blake2b-256(ciphertext)`;
     /// the caller does not supply it.
@@ -95,6 +117,19 @@ impl SealedOrderBook {
         }
 
         let submitter = self.env().caller();
+
+        // Anti-DoS: when wired to a settlement engine, accept only orders backed
+        // by escrow. settle() is all-or-nothing, so an unescrowed order that
+        // crosses would otherwise force the whole window to expire (#2).
+        if let Some(engine_addr) = self.crossing_engine.get() {
+            let engine = CrossingEngineContractRef::new(self.env(), engine_addr);
+            if engine.escrow_fund_of(submitter) == U256::zero()
+                && engine.escrow_cash_of(submitter) == U256::zero()
+            {
+                self.env().revert(Error::NoBackingEscrow);
+            }
+        }
+
         // Derive the hash from the actual ciphertext bytes; never trust a caller-supplied value.
         let ciphertext_hash = Bytes::from(self.env().hash(ciphertext.inner_bytes()).to_vec());
 

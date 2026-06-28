@@ -86,7 +86,7 @@ At least two agents run independently, with different strategies, blind to one a
 
 ## What is private, and what is public
 
-- **Private (never on-chain):** individual submitted orders — side, size, limit price — the full order book, and each agent's strategy and rationale. Before clearing, only ciphertext appears on-chain. This is the front-running protection. Agent rationales shown in the dashboard are off-chain demo artifacts — not posted on-chain, not included in settlement payloads, and not visible to rival agents before the window clears.
+- **Private (never on-chain):** individual submitted orders — side, size, limit price — the full order book, and each agent's strategy and rationale. Before clearing, only ciphertext appears on-chain. This is the front-running protection. Agent rationales shown in the dashboard are off-chain demo artifacts — not posted on-chain, not included in settlement payloads, and not visible to rival agents before the window clears. *(One caveat holds today: escrowing a leg before clearing is observable on-chain — see [Security model & limitations](#security-model--limitations).)*
 - **Public (on-chain):** the final attested clearing price and the settlement transfers (final fills) required to execute the match.
 - **Out of scope (for now):** hiding the final fills themselves. This prototype keeps pre-clearing intent confidential and settles transparently; confidential settlement is future work.
 
@@ -227,6 +227,30 @@ The prototype focuses on the core end-to-end flow above. Beyond it:
 - optional per-window settlement fees (a possible future use of x402 — not used in production today);
 - support for multiple funds;
 - confidential settlement (hiding final fills).
+
+---
+
+## Security model & limitations
+
+Parclose is honest about where trust currently lives. Split the system in two:
+
+**Enforced on-chain today (implemented and tested).** Value conservation on settlement (Σ spent = Σ credited); escrow custody (funds can only become withdrawable credit, never leave except by the depositor's own withdrawal); attestation **replay / domain / freshness** binding (network, engine address, window-closed, nonce, timestamp skew); transfer-restriction (whitelist) on the fund token; the liveness escape (`expire_window`) with `settle`/`expire` mutual exclusion; and per-order **submitter binding** rooted in both the AEAD associated data and the on-chain commitment hash-chain. These properties hold regardless of the points below.
+
+**Rooted in a TEE — the finals milestone (not delivered yet).** The two headline properties Parclose sells — **confidential orders** and **verifiably fair clearing** — both reduce to a real confidential-compute enclave, which this prototype does not yet run. Consequences a reviewer should weigh:
+
+- **Confidentiality is not real until the TEE is.** In this prototype, seal → open → clear execute in one process against a key the binary generates; an operator running it can see every plaintext order. Sealed orders and the commitment chain are the correct *mechanism*, but the privacy *guarantee* arrives only when clearing runs inside an attested enclave.
+- **The testnet trust root is a publicly known dev key.** `CrossingEngine` verifies a single secp256k1 signature against a configured key and checks `code_hash == expected_measurement`. It does **not** verify a remote-attestation document binding measurement → key — that is the finals work. On the deployed testnet contracts the measurement is a placeholder (`[0u8;32]`) and the trust root is a dev key derived from published bytes, so **anyone reading this repo could forge a valid attestation and settle an arbitrary conserving result.** The dev signer is byte-compatible with the production claim, so the swap to a real enclave is mechanical — but until then, fairness rests on that placeholder measurement, not on the chain.
+- **The chain checks conservation, not fairness.** On-chain settlement verifies that value is conserved, not that the price was uniform or the rationing unbiased. A dishonest or buggy enclave could pick a skewed price and still settle cleanly. Closing this needs the optional **fairness attestation** (enclave attesting uniform-price, non-preferential crossing) — described in the roadmap, not yet built.
+
+**Known issues in the current contracts (independent of the TEE).**
+
+- **Escrow side-channel (privacy).** Escrowing a leg before clearing is observable on-chain: a redeemer escrows the fund leg, a subscriber the cash leg, so an observer can infer **side**, and the deposit bounds **size**. Sealed orders still hide the limit price and exact order, but pre-clearing intent is not fully private today. The deposit event is minimized to reduce this leak; fully confidential escrow (or folding escrow into the sealed, attested input) is finals work.
+- **Denial-of-clearing (liveness).** Settlement is all-or-nothing, and order submission is permissionless, so an order that crosses but is not backed by escrow can force a window to `expire` rather than settle. Custody is never at risk (no funds can be lost), but a griefer could stall windows. Submission is gated to require backing escrow to mitigate this; binding the clearing itself to attested per-order escrow is the complete fix.
+- **Single-admin governance.** The whitelist and rule-publishing controls are single-admin without a timelock. This is adequate for a prototype, not for production custody of regulated assets; multi-party (weighted-key) authorization and audit events are a hardening item.
+
+**Toward production** (in rough priority): real TEE + remote-attestation-document verification (binding measurement → key, off the testnet dev root); an on-chain registry for the enclave encryption key; confidential or obfuscated escrow to close the side-channel; the fairness attestation; bounded orders-per-window with settlement pagination; and events + multi-key authorization on the compliance controls.
+
+**Code vs. the live demo.** The escrow-backed submission gate (#2), the minimized deposit event (#1), the per-window rule-version freeze and the whitelist event (#7) are implemented in this repository and covered by the test suite. The originally deployed testnet demo contracts linked above predate this hardening; redeploying to activate it on-chain is mechanical but would change the published addresses, so the live demo still references the original deployment.
 
 ---
 

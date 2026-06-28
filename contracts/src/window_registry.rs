@@ -21,6 +21,8 @@ pub struct WindowInfo {
     pub is_open: bool,
     pub opened_at: u64,
     pub closed_at: u64,
+    /// The clearing rule version frozen at the moment this window opened.
+    pub rule_version: u32,
 }
 
 /// Registry of crossing windows and the published uniform-price clearing rule.
@@ -96,6 +98,7 @@ impl WindowRegistry {
                 is_open: true,
                 opened_at: now,
                 closed_at: 0,
+                rule_version: self.rule_ver.get_or_default(),
             },
         );
         self.active_wid.set(wid);
@@ -152,6 +155,17 @@ impl WindowRegistry {
     /// Returns the current rule version number.
     pub fn rule_version(&self) -> u32 {
         self.rule_ver.get_or_default()
+    }
+
+    /// The rule version frozen when `window_id` opened. Settlement validates an
+    /// attestation against this, not the live version, so a rule published after
+    /// a window opens cannot strand that window's settlement (#7). Falls back to
+    /// the current version if the window is unknown.
+    pub fn rule_version_of(&self, window_id: u64) -> u32 {
+        self.windows
+            .get(&window_id)
+            .map(|w| w.rule_version)
+            .unwrap_or_else(|| self.rule_ver.get_or_default())
     }
 
     /// Returns the rule text for a specific historical version.

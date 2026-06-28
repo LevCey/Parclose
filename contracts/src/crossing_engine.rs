@@ -26,7 +26,7 @@ pub enum Error {
     WindowNotClosed = 6,
     /// This window has already been settled.
     WindowConsumed = 7,
-    /// Claim `rule_version` does not match the registry's current rule version.
+    /// Claim `rule_version` does not match the rule version frozen for the window.
     RuleVersionMismatch = 8,
     /// Claim `code_hash` does not match the configured expected measurement.
     MeasurementMismatch = 9,
@@ -58,10 +58,11 @@ pub enum Error {
 
 #[odra::event]
 pub struct EscrowDeposited {
+    // Intentionally minimal: records only that an account deposited — not which
+    // leg or how much — to avoid leaking order side and size before clearing
+    // (#1). The token transfer itself remains observable; fully confidential
+    // escrow is future work.
     pub account: Address,
-    /// true = fund token leg, false = cash token leg.
-    pub is_fund: bool,
-    pub amount: U256,
 }
 
 #[odra::event]
@@ -164,7 +165,7 @@ impl CrossingEngine {
         self.fund_token.transfer_from(&caller, &self_addr, &amount);
         let new = self.checked_add(self.escrow_fund.get(&caller).unwrap_or_default(), amount);
         self.escrow_fund.set(&caller, new);
-        self.env().emit_event(EscrowDeposited { account: caller, is_fund: true, amount });
+        self.env().emit_event(EscrowDeposited { account: caller });
     }
 
     /// Escrows cash tokens (the subscriber's leg). Requires the current window open and the caller
@@ -178,7 +179,7 @@ impl CrossingEngine {
         self.cash_token.transfer_from(&caller, &self_addr, &amount);
         let new = self.checked_add(self.escrow_cash.get(&caller).unwrap_or_default(), amount);
         self.escrow_cash.set(&caller, new);
-        self.env().emit_event(EscrowDeposited { account: caller, is_fund: false, amount });
+        self.env().emit_event(EscrowDeposited { account: caller });
     }
 
     /// Settles a closed window from escrow. Permissionless: the attestation authorizes itself.
@@ -372,7 +373,7 @@ impl CrossingEngine {
         if self.expired_window.get(&claim.window_id).unwrap_or(false) {
             self.env().revert(Error::WindowExpired);
         }
-        if claim.rule_version != self.registry.rule_version() {
+        if claim.rule_version != self.registry.rule_version_of(claim.window_id) {
             self.env().revert(Error::RuleVersionMismatch);
         }
         if claim.code_hash != self.expected_measurement.get().unwrap_or_default() {
@@ -1175,5 +1176,62 @@ mod tests {
         s.engine.withdraw();
         assert_eq!(s.cash.balance_of(&s.redeemer), U256::from(CASH));
         assert_eq!(s.fund.balance_of(&s.subscriber), U256::from(QTY));
+    }
+
+    /// Threat model (#2): once the book is wired to its settlement engine, an
+    /// order not backed by escrow is rejected at submission, so a griefer cannot
+    /// submit an unescrowed crossing order to force the all-or-nothing settlement
+    /// to revert and brick the window until it expires.
+    #[test]
+    fn unescrowed_order_is_rejected_when_engine_wired() {
+        let mut s = setup();
+        s.book.set_crossing_engine(s.engine.address());
+
+        // A fresh account with no escrow cannot submit (the DoS vector).
+        let griefer = s.env.get_account(3);
+        s.env.set_caller(griefer);
+        assert_eq!(
+            s.book
+                .try_submit_sealed_order(s.wid, Bytes::from(b"unescrowed".to_vec())),
+            Err(crate::sealed_order_book::Error::NoBackingEscrow.into())
+        );
+
+        // The escrow-backed redeemer (escrowed in setup) still can.
+        s.env.set_caller(s.redeemer);
+        s.book
+            .submit_sealed_order(s.wid, Bytes::from(b"escrowed-redeem".to_vec()));
+    }
+
+    /// Wiring the settlement engine is one-time and immutable.
+    #[test]
+    fn set_crossing_engine_is_one_time() {
+        let mut s = setup();
+        s.book.set_crossing_engine(s.engine.address());
+        assert_eq!(
+            s.book.try_set_crossing_engine(s.engine.address()),
+            Err(crate::sealed_order_book::Error::EngineAlreadySet.into())
+        );
+    }
+
+    /// Threat model (#7): the rule version is frozen per window at open time, so
+    /// an admin publishing a new rule between a window's open and its settlement
+    /// cannot strand it — a claim bound to the frozen version still settles.
+    #[test]
+    fn rule_version_is_frozen_per_window() {
+        let mut s = setup();
+        let frozen = s.registry.rule_version();
+        let (input_hash, output_hash) = close_and_commit(&mut s);
+
+        // Admin publishes a new rule after the window opened (and closed).
+        s.env.set_caller(s.env.get_account(0));
+        s.registry.publish_rule("v2-rule".to_string());
+        assert_eq!(s.registry.rule_version(), frozen + 1);
+
+        // A claim bound to the window's frozen rule version still settles.
+        let claim = base_claim(s.engine.address(), s.wid, frozen, input_hash, output_hash, 1);
+        let attestation = sign_claim(&s.sk, &s.pk, claim);
+        let result = clearing_result(s.wid, s.redeemer, s.subscriber);
+        s.engine.settle(result, attestation);
+        assert!(s.engine.is_window_consumed(s.wid));
     }
 }

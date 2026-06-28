@@ -92,7 +92,7 @@ fn main() {
 
     // 4. SealedOrderBook
     env.set_gas(GAS_DEPLOY);
-    let book = SealedOrderBook::deploy(
+    let mut book = SealedOrderBook::deploy(
         &env,
         SealedOrderBookInitArgs { registry_address: registry.address() },
     );
@@ -120,6 +120,10 @@ fn main() {
     env.set_gas(GAS_CALL);
     registry.set_crossing_engine(engine.address());
     println!("set_crossing_engine: ok");
+
+    // Wire book -> engine (one-time), activating the escrow-backing submission gate (#2).
+    book.set_crossing_engine(engine.address());
+    println!("book set_crossing_engine: ok");
 
     // Whitelist the custody endpoint (engine) and the deployer on the fund token.
     env.set_gas(GAS_CALL);
