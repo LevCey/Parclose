@@ -110,7 +110,7 @@ enclave/     confidential clearing (uniform-price crossing), sealed-order decryp
 seal/        sealed-order encryption (X25519 ECDH + XChaCha20-Poly1305) binding each order to its window and submitter
 agents/      autonomous liquidity agents (perceive → reason → act): the LLM strategy and a blind-competition harness
 shared/      canonical cross-component encodings (order, attestation claim, clearing result)
-dashboard/   streaming demo UI (planned)
+dashboard/   self-contained static demo UI (no build step) that renders the crossing-window beat
 ```
 
 ---
@@ -126,7 +126,7 @@ Toward the live prototype:
 - [x] Smart contracts deployed on Casper Testnet
 - [ ] Confidential clearing on a real TEE (a labeled testnet/dev attestation signer is used during development)
 - [x] Autonomous liquidity agents driving live windows (two or more, competing blind)
-- [ ] Streaming demo dashboard
+- [x] Demo dashboard rendering the crossing-window beat (static; live CSPR.cloud streaming is future work)
 - [ ] Demo video
 
 ### Deployed on Casper Testnet
@@ -186,6 +186,15 @@ To run the agents against the real model, set an API key and use the live exampl
 cd agents
 export ANTHROPIC_API_KEY=sk-...        # optionally ANTHROPIC_MODEL
 cargo run --example live_compete
+```
+
+### Dashboard
+
+The `dashboard/` folder is a self-contained static UI (plain HTML/CSS/JS, no build step) that renders one crossing window's beat — sealed orders as ciphertext, the two agents' blind reasoning and four-factor traces, the uniform clearing price, and the on-chain settlement (with cspr.live links). It reads `dashboard/window.json`, which the agent demo produces (`PARCLOSE_DRY_RUN=1 cargo run --bin demo_agents --features livenet` regenerates it with the real model, no gas). Serve it locally:
+
+```bash
+cd dashboard && python3 -m http.server
+# then open the printed URL
 ```
 
 ### Configuration

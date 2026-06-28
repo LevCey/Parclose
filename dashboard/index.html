@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parclose — Confidential Liquidity Windows</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="wrap">
+        <div class="badge">Casper Testnet · live</div>
+        <h1>Parclose</h1>
+        <p class="tagline">
+          Fair, private redemptions for tokenized real-world-asset funds — coordinated by
+          autonomous liquidity agents and settled on Casper.
+        </p>
+        <p class="problem">
+          Semi-liquid RWA funds can't clear redemptions fairly: gating is blind, order flow leaks
+          and invites front-running, and marks are stale. Parclose runs a confidential
+          <strong>crossing window</strong> — sealed orders, one fair clearing price, verifiable
+          on-chain settlement — without any order ever touching the chain in the clear.
+        </p>
+        <button id="play" class="play">▶ Play the window</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section id="step-orders" class="step">
+        <div class="step-head"><span class="num">1</span><h2>Sealed orders arrive</h2></div>
+        <p class="lead">
+          Participants and agents submit <strong>sealed orders</strong>. Only ciphertext is posted
+          on-chain — no side, size, or price is visible. This is the front-running protection.
+        </p>
+        <div id="orders" class="orders"></div>
+      </section>
+
+      <section id="step-agents" class="step">
+        <div class="step-head"><span class="num">2</span><h2>Agents reason — blind</h2></div>
+        <p class="lead">
+          Two autonomous liquidity agents each read the same attested market view and reason under
+          uncertainty and competition, <strong>unable to see any rival's order or strategy</strong>.
+          Their reasoning is an off-chain artifact, shown here for the demo.
+        </p>
+        <div id="agents" class="agents"></div>
+      </section>
+
+      <section id="step-clearing" class="step">
+        <div class="step-head"><span class="num">3</span><h2>Confidential clearing</h2></div>
+        <p class="lead">
+          The enclave computes a single <strong>uniform clearing price</strong> and matched set,
+          and signs a domain-separated attestation over the result.
+        </p>
+        <div id="clearing" class="clearing"></div>
+      </section>
+
+      <section id="step-settlement" class="step">
+        <div class="step-head"><span class="num">4</span><h2>Atomic settlement on Casper</h2></div>
+        <p class="lead">
+          The <code>CrossingEngine</code> verifies the attestation (signature, code measurement,
+          freshness, domain binding) and atomically settles the matched set from pre-funded escrow —
+          in seconds of deterministic finality.
+        </p>
+        <div id="settlement" class="settlement"></div>
+      </section>
+
+      <section id="beat" class="beat">
+        <p>private inputs → verified fair clearing → atomic on-chain settlement</p>
+        <small>No individual order ever touched the chain in the clear.</small>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <h3>Deployed on Casper Testnet</h3>
+      <div id="deployed" class="deployed"></div>
+      <p class="fine" id="meta"></p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

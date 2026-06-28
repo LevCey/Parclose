@@ -14,11 +14,12 @@ parclose-seal = { path = "../seal", optional = true }
 parclose-enclave = { path = "../enclave", optional = true }
 parclose-agents = { path = "../agents", optional = true }
 rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [features]
 default = []
 # Enables the Testnet deploy + demo binaries (src/bin/deploy.rs, src/bin/demo_window.rs, demo_agents.rs).
-livenet = ["odra-casper-livenet-env", "parclose-seal", "parclose-enclave", "parclose-agents", "rand_core"]
+livenet = ["odra-casper-livenet-env", "parclose-seal", "parclose-enclave", "parclose-agents", "rand_core", "serde_json"]
 
 [dev-dependencies]
 odra-test = { version = "2.2.0", features = [], default-features = false }
