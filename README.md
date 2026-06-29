@@ -6,6 +6,8 @@ Parclose runs a confidential **crossing window**: investors and autonomous agent
 
 > Status: active development · Casper **Testnet** prototype · custodies no real value. See [Status](#status).
 
+**▶ [Demo video](https://youtu.be/OpFWBpy-Nlo)  ·  🌐 [Live demo: parclose.xyz](https://parclose.xyz)**
+
 ---
 
 ## The problem
