@@ -137,6 +137,8 @@ function renderDeployed(data) {
 function play() {
   const btn = document.getElementById("play");
   btn.disabled = true;
+  const FIRST_MS = 800; // quick first move after the click
+  const STEP_MS = 2200; // then dwell long enough to read each step
   STEPS.forEach((id) => document.getElementById(id).classList.remove("show"));
   STEPS.forEach((id, i) => {
     setTimeout(() => {
@@ -145,9 +147,9 @@ function play() {
       node.scrollIntoView({ behavior: "smooth", block: "center" });
       if (i === STEPS.length - 1) {
         btn.disabled = false;
-        setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 600);
+        setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 1500);
       }
-    }, 700 * (i + 1));
+    }, FIRST_MS + STEP_MS * i);
   });
 }
 
